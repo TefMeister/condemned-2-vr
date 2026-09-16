@@ -73,3 +73,12 @@ please get in touch and it will be corrected as quickly as we can manage.
 A non-commercial fan project. It requires you to own a legitimate copy of the game and
 redistributes no original assets. The techniques used are ordinary reverse-engineering
 applied to software we own, for personal use.
+
+## Licence
+
+**BSD 3-Clause** — see [`LICENSE`](LICENSE). Deliberately the same licence as the
+[ReXGlue SDK](https://github.com/rexglue/rexglue-sdk) and the recompilation projects it supports, so
+that fixes can move freely in either direction without a licensing conversation.
+
+It covers the code and notes in this repository only. It grants **no rights in any game or asset** —
+none are included here, and you need your own legitimate copy of the game.
