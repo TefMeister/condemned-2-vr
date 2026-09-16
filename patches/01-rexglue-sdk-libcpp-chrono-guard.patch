@@ -1,0 +1,13 @@
+diff --git a/include/rex/chrono/chrono.h b/include/rex/chrono/chrono.h
+index d876846..23f1d23 100644
+--- a/include/rex/chrono/chrono.h
++++ b/include/rex/chrono/chrono.h
+@@ -116,7 +116,7 @@ using XSystemClock = detail::NtSystemClock<detail::Domain::Guest>;
+ 
+ namespace std::chrono {
+ 
+-#ifdef __APPLE__
++#if defined(__APPLE__) || defined(_LIBCPP_VERSION)
+ // Apple libc++ does not expose clock_time_conversion or clock_cast.
+ template <class, class>
+ struct clock_time_conversion {};

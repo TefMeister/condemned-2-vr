@@ -1,0 +1,15 @@
+diff --git a/CMakePresets.json b/CMakePresets.json
+index 9b69ed9..a7a4a92 100644
+--- a/CMakePresets.json
++++ b/CMakePresets.json
+@@ -9,7 +9,9 @@
+             "binaryDir": "${sourceDir}/out/build/${presetName}",
+             "cacheVariables": {
+                 "CMAKE_C_COMPILER": "clang",
+-                "CMAKE_CXX_COMPILER": "clang++"
++                "CMAKE_CXX_COMPILER": "clang++",
++                "CMAKE_C_FLAGS": "-march=x86-64-v2",
++                "CMAKE_CXX_FLAGS": "-march=x86-64-v2"
+             },
+             "condition": {
+                 "type": "equals",

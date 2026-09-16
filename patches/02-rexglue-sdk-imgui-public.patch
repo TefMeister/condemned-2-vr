@@ -1,0 +1,14 @@
+diff --git a/src/kernel/CMakeLists.txt b/src/kernel/CMakeLists.txt
+index 984b97d..b285614 100644
+--- a/src/kernel/CMakeLists.txt
++++ b/src/kernel/CMakeLists.txt
+@@ -66,4 +66,8 @@ set(REXKERNEL_SOURCES
+ list(TRANSFORM REXKERNEL_SOURCES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+ target_sources(rexruntime PRIVATE ${REXKERNEL_SOURCES})
+ 
+-target_link_libraries(rexruntime PRIVATE o1heap rexcore rexfilesystem rexui rexaudio rexinput imgui)
++target_link_libraries(rexruntime PRIVATE o1heap rexcore rexfilesystem rexui rexaudio rexinput)
++# rex/ui/style.h is a PUBLIC header that includes <imgui.h>, so consumers that
++# compile SDK sources (rex_app.cpp via rexglue_configure_target) need imgui's
++# include directories. Link it PUBLIC so they propagate.
++target_link_libraries(rexruntime PUBLIC imgui)
