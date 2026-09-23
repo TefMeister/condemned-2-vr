@@ -14,3 +14,10 @@ are not, or you are a rights holder who wants something corrected or removed, em
 - **ReXGlue** SDK developers — https://github.com/rexglue/rexglue-sdk
 - **furqanagwan**, recomp-framework — https://github.com/furqanagwan/recomp-framework
 - **DSOGaming**
+
+## Sources (2026-09-23)
+
+- **phunkaeg**, VR Modding Playbook — https://github.com/phunkaeg/vr-modding-playbook
+- **DR-89**, fear-vr — https://github.com/DR-89/fear-vr
+- The **condemned-vr** and **FEAR2VR** authors (no public link found yet), as recorded in the playbook
+- **Monolith Productions**, F.E.A.R. public SDK (engine reference)
