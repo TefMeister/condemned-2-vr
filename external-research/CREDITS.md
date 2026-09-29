@@ -21,3 +21,8 @@ are not, or you are a rights holder who wants something corrected or removed, em
 - **DR-89**, fear-vr — https://github.com/DR-89/fear-vr
 - The **condemned-vr** and **FEAR2VR** authors (no public link found yet), as recorded in the playbook
 - **Monolith Productions**, F.E.A.R. public SDK (engine reference)
+
+## Sources (2026-09-29)
+
+- **ReXGlue** SDK developers (source tree and submodule list) — https://github.com/rexglue/rexglue-sdk
+- **SDL** developers (libsdl-org), OpenXR integration docs and loader shim — https://github.com/libsdl-org/SDL
