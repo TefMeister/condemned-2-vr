@@ -89,3 +89,10 @@ Full evidence, measurements and the fixes: [`../patches/UPSTREAM-REPORT.md`](../
   which is what the upstream README means by needing both VS2022 and LLVM/Clang.
 - ⛔ The SDK having `if(NOT MSVC)` branches does **not** imply MinGW support on Windows
   `[disproved 2026-09-16]` — those branches exist for Linux and macOS.
+
+## Inbox folds, 2026-09-29
+
+**`/gs` 2026-09-17 on the OPEN block: already resolved.** The block was re-audited and re-dated on 2026-09-21, and `gate-scan.sh --check` no longer flags it (2026-09-29 sweep).
+
+**The `openxr_loader.dll` string is probably SDL3's dormant XR module (`/gr` 2026-09-29).** ReXGlue has no OpenXR code of its own but bundles SDL3, whose GPU API has an OpenXR module that loads `openxr_loader.dll` by that name; ReXGlue uses SDL only for the window and draws with its own D3D12 renderer `[inferred-static]`. To close the board row: look for SDL's other XR strings beside it in `rexruntime.dll`. Topic: `external-research/topics/2026-09-29-the-openxr-loader-string-is-sdl3s-dormant-xr-module.md`.
+
