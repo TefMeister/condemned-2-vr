@@ -1,6 +1,8 @@
 # Research index
 
-**Last `/gr` pass: 2026-09-29 (estate sweep) — CHECK-IN.** Inbox empty. One topic answering the `openxr_loader.dll` row: the string is most likely SDL3's unused XR module bundled with the ReXGlue SDK, not a VR path; pointer dropped in `engine-research/inbox/`.
+**Last `/gr` pass: 2026-10-04 (estate sweep) — CHECK-IN.** Inbox empty. Condemned2Recomp released 0.2.0/0.2.1 on 2026-09-29 (FOV, LOD and frame-cap settings, mouse look, DX12 performance fixes); we are on 0.1.0. Pointer sent to the dossier.
+
+_Previous: **Last `/gr` pass: 2026-09-29 (estate sweep) — CHECK-IN.** Inbox empty. One topic answering the `openxr_loader.dll` row: the string is most likely SDL3's unused XR module bundled with the ReXGlue SDK, not a VR path; pointer dropped in `engine-research/inbox/`._
 
 _Previous: **Last `/gr` pass: 2026-09-23 (estate sweep) — FULL.** Checked against phunkaeg's *VR Modding Playbook*: three VR mods on LithTech Jupiter EX (fear-vr, condemned-vr, FEAR2VR) and fear-vr's frame-order rule for where a second eye goes._
 
