@@ -15,7 +15,7 @@ echo LIB head:     %LIB:~0,70%
 
 set "PATH=C:\Program Files\CMake\bin;C:\Users\Tefa\AppData\Local\Microsoft\WinGet\Packages\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe;%PATH%"
 
-cd /d E:\condemned-2-vr\src\rexglue-sdk
+cd /d D:\condemned-2-vr\src\rexglue-sdk
 if exist out\build\win-amd64 rmdir /s /q out\build\win-amd64
 
 echo.

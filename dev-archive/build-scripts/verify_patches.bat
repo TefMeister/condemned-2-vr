@@ -1,8 +1,8 @@
 @echo off
 setlocal
 set LOGDIR=C:\Users\Tefa\AppData\Local\Temp\claude\D--Program-Files--x86--Steam-steamapps-common\433c5e9a-8719-4657-add8-0d486cd69aab\scratchpad
-set GAME=E:\condemned-2-vr\src\Condemned2Recomp
-set SDK=E:\condemned-2-vr\src\rexglue-sdk
+set GAME=D:\condemned-2-vr\src\Condemned2Recomp
+set SDK=D:\condemned-2-vr\src\rexglue-sdk
 
 call "D:\VSBuildTools\VC\Auxiliary\Build\vcvars64.bat" > "%LOGDIR%\vcv3.log" 2>&1
 set "PATH=C:\Program Files\CMake\bin;C:\Users\Tefa\AppData\Local\Microsoft\WinGet\Packages\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe;%PATH%"

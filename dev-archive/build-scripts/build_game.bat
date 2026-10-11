@@ -1,8 +1,8 @@
 @echo off
 setlocal
 set LOGDIR=C:\Users\Tefa\AppData\Local\Temp\claude\D--Program-Files--x86--Steam-steamapps-common\433c5e9a-8719-4657-add8-0d486cd69aab\scratchpad
-set GAME=E:\condemned-2-vr\src\Condemned2Recomp
-set SDK=E:\condemned-2-vr\src\rexglue-sdk
+set GAME=D:\condemned-2-vr\src\Condemned2Recomp
+set SDK=D:\condemned-2-vr\src\rexglue-sdk
 
 if not exist "%GAME%\assets\default.xex" ( echo MISSING default.xex & exit /b 1 )
 echo assets OK
