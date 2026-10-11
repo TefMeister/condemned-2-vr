@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Git on Windows without symlink support checks out mode-120000 entries as small
 # TEXT files containing the link target. Replace each with a real copy.
-SDK="E:/condemned-2-vr/src/rexglue-sdk"
+SDK="D:/condemned-2-vr/src/rexglue-sdk"
 cd "$SDK" || exit 1
 
 fixed=0; failed=0
