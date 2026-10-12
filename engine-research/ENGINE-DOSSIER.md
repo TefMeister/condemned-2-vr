@@ -99,6 +99,9 @@ Full evidence, measurements and the fixes: [`../patches/UPSTREAM-REPORT.md`](../
 - **Music:** `"MusicEnable" "0"` added to `Assets/autoexec.cfg` (backup beside it, CRLF kept) `[verified-numerically 2026-10-12]`; not yet heard. The in-game slider was also set to 0, but without a signed-in profile it does not save.
 - **Driving:** a pad that disappears pauses the game; the first press after a new pad is sometimes lost; short presses are dropped at this PC's frame rate (hold ~0.35 s); a slider needs a long hold. Use one long-lived pad process (`recon/2026-10-12-camera-seam-live/c2_padd.py`). Route: START (skip film), START, START (title), B (no sign-in), START (copyright), A (brightness), A (Single Player), A (Rock Bottom), A (difficulty), ~4 min to the 3D level, B (tutorial box).
 
+- **The screen-effects switch works** (`C2_VR_SCREEN_FX_OFF=1`, `src/vr_screenfx_music.cpp`): same alley, same eye shift, edge sharpness 0.66 → 2.08 and the blur is gone by eye `[verified-live 2026-10-12, n=1]`. Log: `EnableScreenEffects`/`EnableDamageFX`/`CamDamage` defaults 1 → 0, `HeadBob` 1 → 0, `MotionBlur_Enable` 1 → 0. Off unless switched, so flat play is unchanged. Evidence `recon/2026-10-12-camera-seam-live/screen-fx-off-*`.
+- **Probably two moments per pair, as on The Darkness:** in a sharp pair the walking figure stands in a different pose and ~70 px apart between halves, more than the ~17 px eye shift `[hypothesis, by eye n=1]`. The reader is mapping the threads and clock for a freeze.
+
 ### From the reader: 2026-10-12-lm-reader-camera-seam
 
 From: `/lm` reader (static only; nothing launched). Code: `staging/condemned-2-vr/camera-seam-2026-10-12/`.

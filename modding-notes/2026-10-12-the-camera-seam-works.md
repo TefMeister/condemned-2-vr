@@ -22,3 +22,10 @@ screen. The picture in play is heavily blurred by the game's own screen effects,
 - Whether both halves are always the same moment (The Darkness needed a freeze for that).
 - Whether the screen-effects switches (cfg lines + the reader's draft hook) remove the blur. Drafted, not built.
 - What a world unit is (centimetres is a guess).
+
+## Later: the screen effects switch off
+
+A second `/lm` built the reader's effects hook into the game. With `C2_VR_SCREEN_FX_OFF=1` the same alley is
+crisp (edge sharpness 0.66 → 2.08; motion blur, screen effects, damage effects, camera kick and head bob all
+forced off) `[verified-live 2026-10-12, n=1]`. Off unless switched. In that sharp picture the walking figure
+seems to be at a different moment in each half, so a freeze like The Darkness's is likely needed next.
