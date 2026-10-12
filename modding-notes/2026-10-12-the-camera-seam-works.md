@@ -29,3 +29,12 @@ A second `/lm` built the reader's effects hook into the game. With `C2_VR_SCREEN
 crisp (edge sharpness 0.66 → 2.08; motion blur, screen effects, damage effects, camera kick and head bob all
 forced off) `[verified-live 2026-10-12, n=1]`. Off unless switched. In that sharp picture the walking figure
 seems to be at a different moment in each half, so a freeze like The Darkness's is likely needed next.
+
+## Later still: both eyes show the same moment
+
+The reader found Condemned 2 runs its whole frame on one thread (simpler than The Darkness), wrote an eye
+sync that labels each real present with its eye and holds the game clock still for the second eye of a pair.
+Live: left and right alternate exactly, the time gap inside a pair reads 0 ms, and by eye the figure at the bin
+is in the same pose in both halves with only the viewpoint shifted, the right way round
+`[verified-live 2026-10-12, n=1 run]`. With the effects switch on, these are clean, sharp stereo pairs.
+Next: per-eye OpenXR output and head pose, then a headset test at home.
