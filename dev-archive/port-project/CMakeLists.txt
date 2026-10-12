@@ -14,6 +14,7 @@ include(generated/rexglue.cmake)
 set(CONDEMNED2RECOMP_SOURCES
     src/main.cpp
     src/vr_camera_probe.cpp
+    src/vr_screenfx_music.cpp
 )
 
 if(WIN32)

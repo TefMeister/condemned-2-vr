@@ -1,0 +1,20 @@
+[2026-10-12 18:29:53.643] [info] [core] [t25968] [C2FX] register 0x82018584 default 1 -> 0
+[2026-10-12 18:29:53.725] [info] [core] [t25968] [C2FX] HeadBob set 1 -> 0
+[2026-10-12 18:29:53.725] [info] [core] [t25968] [C2FX] HeadBob set 1 -> 0
+[2026-10-12 18:29:53.726] [info] [core] [t25968] [C2FX] HeadBob set 1 -> 0
+[2026-10-12 18:29:53.727] [info] [core] [t25968] [C2FX] HeadBob set 1 -> 0
+[2026-10-12 18:30:16.611] [info] [gpu] [t25968] [C2VR] flips=600 views/frame 0:1 1:0 2:0 3:0 4:20 5+:579 | shifted/frame 0:600 1:0 2:0 3+:0
+[2026-10-12 18:30:41.696] [info] [gpu] [t25968] [C2VR] flips=1200 views/frame 0:1 1:0 2:0 3:0 4:20 5+:1179 | shifted/frame 0:1200 1:0 2:0 3+:0
+[2026-10-12 18:31:01.815] [info] [gpu] [t25968] [C2VR] flips=1800 views/frame 0:1 1:0 2:0 3:0 4:20 5+:1779 | shifted/frame 0:1800 1:0 2:0 3+:0
+[2026-10-12 18:31:24.150] [info] [gpu] [t25968] [C2VR] flips=2400 views/frame 0:2 1:0 2:0 3:0 4:20 5+:2378 | shifted/frame 0:2400 1:0 2:0 3+:0
+[2026-10-12 18:31:50.781] [info] [gpu] [t25968] [C2VR] flips=3000 views/frame 0:2 1:0 2:0 3:0 4:20 5+:2978 | shifted/frame 0:3000 1:0 2:0 3+:0
+[2026-10-12 18:32:10.866] [info] [gpu] [t25968] [C2VR] flips=3600 views/frame 0:2 1:0 2:0 3:0 4:20 5+:3578 | shifted/frame 0:3600 1:0 2:0 3+:0
+[2026-10-12 18:32:31.368] [info] [gpu] [t25968] [C2VR] flips=4200 views/frame 0:2 1:0 2:0 3:0 4:20 5+:4178 | shifted/frame 0:4200 1:0 2:0 3+:0
+[2026-10-12 18:32:51.354] [info] [gpu] [t25968] [C2VR] flips=4800 views/frame 0:2 1:0 2:0 3:0 4:20 5+:4778 | shifted/frame 0:4800 1:0 2:0 3+:0
+[2026-10-12 18:33:11.506] [info] [gpu] [t25968] [C2VR] flips=5400 views/frame 0:2 1:0 2:0 3:0 4:20 5+:5378 | shifted/frame 0:5400 1:0 2:0 3+:0
+[2026-10-12 18:33:31.939] [info] [gpu] [t25968] [C2VR] flips=6000 views/frame 0:2 1:0 2:0 3:0 4:20 5+:5978 | shifted/frame 0:6000 1:0 2:0 3+:0
+[2026-10-12 18:33:53.725] [info] [gpu] [t25968] [C2VR] flips=6600 views/frame 0:2 1:0 2:0 3:0 4:20 5+:6578 | shifted/frame 0:6600 1:0 2:0 3+:0
+[2026-10-12 18:34:02.593] [info] [core] [t25968] [C2FX] MotionBlur_Enable set 1 -> 0
+[2026-10-12 18:34:02.949] [info] [core] [t25968] [C2FX] register 0x82024A80 default 1 -> 0
+[2026-10-12 18:34:22.796] [info] [gpu] [t25968] [C2VR] flips=7200 views/frame 0:4 1:0 2:0 3:0 4:20 5+:7176 | shifted/frame 0:7002 1:45 2:1 3+:152
+[2026-10-12 18:35:02.717] [info] [gpu] [t25968] [C2VR] flips=7800 views/frame 0:4 1:0 2:0 3:0 4:20 5+:7776 | shifted/frame 0:7002 1:45 2:1 3+:752
