@@ -102,6 +102,92 @@ Full evidence, measurements and the fixes: [`../patches/UPSTREAM-REPORT.md`](../
 - **The screen-effects switch works** (`C2_VR_SCREEN_FX_OFF=1`, `src/vr_screenfx_music.cpp`): same alley, same eye shift, edge sharpness 0.66 → 2.08 and the blur is gone by eye `[verified-live 2026-10-12, n=1]`. Log: `EnableScreenEffects`/`EnableDamageFX`/`CamDamage` defaults 1 → 0, `HeadBob` 1 → 0, `MotionBlur_Enable` 1 → 0. Off unless switched, so flat play is unchanged. Evidence `recon/2026-10-12-camera-seam-live/screen-fx-off-*`.
 - **Probably two moments per pair, as on The Darkness:** in a sharp pair the walking figure stands in a different pose and ~70 px apart between halves, more than the ~17 px eye shift `[hypothesis, by eye n=1]`. The reader is mapping the threads and clock for a freeze.
 
+- ⭐ **Same moment in both eyes, live** (`C2_EYE_SYNC=1` + `DK_SBS_HOLD=1`, `src/vr_eye_sync.cpp`): `[C2VR] SYNC L=3900 R=3899, skipped_vdswap=0, keepalive_swaps=0, sdk_lookup_miss=0`; `FREEZE pair_dt mean=0.000ms max=0.000ms`, capped=2; by eye the figure at the bin holds the same pose in both halves while the viewpoint shifts, and the shift has the right sign (the right eye sees near things further left) `[verified-live 2026-10-12, n=1 run, 3 pictures]`. Smoke and snow differ slightly between halves (other clocks) `[hypothesis]`. The earlier "probably two moments" line is answered by this. Evidence `recon/2026-10-12-camera-seam-live/eye-sync-*`.
+
+### From the reader: same moment (threads, clocks, design)
+
+From: `/lm` reader (static only; nothing launched). Code: `staging/condemned-2-vr/same-moment-2026-10-12/`.
+Tools: The Darkness's `idx.py`/`callers.py`/`fn.py`/`xref.py` pointed at Condemned's generated code,
+`img.py` with `off(a) = a - 0x82000000` on a fresh `xex_unpack.py` image.
+
+## Short answer
+
+Mostly no. No game/render packet queue was found; the frame, the views and FlipScreen run on one
+thread. But two things can still put the wrong picture in a half, and the world is not yet held
+still for the second eye.
+
+## Threads
+
+- **FlipScreen and every logged set-view ran on the same host thread** in all three camera-seam runs
+  (`flip thread=` hash equals every `view ... thread=` hash) `[verified-live 2026-10-12, n=3 runs]`.
+  ⚠️ Sampled: only the first 3 calls of each view kind are logged with a thread.
+- **The main loop is single-threaded:** `xstart -> sub_82178E90 -> sub_8217CEE8`, which loops
+  `while (!sub_821802A8(*(0x829277B0))) {}`. `sub_821802A8` is the whole frame: clocks, client/server
+  update, render (through interface vtables, so not visible as direct calls) and, last, a frame
+  limiter `[inferred-static 2026-10-12]`.
+- **No render-command queue:** no queue/render-thread strings, no render-thread class in RTTI (only
+  the generic `CXenon_LTThread`, Havok worker threads `PhysicsClientThreads/ServerThreads`, a resource
+  loader) `[inferred-static]`. Set-view builds every matrix (`sub_8212B010`) on the calling thread,
+  so the eye shift is fixed when the view is set, not when a packet is played `[inferred-static]`.
+- That FlipScreen is called INSIDE `sub_821802A8` is not proven statically (vtable calls)
+  `[hypothesis]`; the new probe counts `flips_in_frame` / `flips_outside_frame`.
+
+## Correction: `sub_82671908` is a thread, not "present while waiting"
+
+- It is a **thread entry**: D3D device create `sub_8265EA28 -> sub_8266ABF8 -> sub_82671E10` calls
+  CreateThread (`sub_826505C0`) with start address 0x82671908 `[inferred-static 2026-10-12]`.
+  Supersedes: 2026-10-12-lm-reader-camera-seam, "Frame end" bullet 2 (it said "reached only through a
+  function pointer: presents while the game waits on a lock/event").
+- It waits on an event with a 30 ms timeout (-300000 x 100 ns); on timeout (258) it re-presents the
+  stored front buffer (`device+14844`) through `sub_8265F2B0` if `device+10942` bit 0x02 is set
+  `[inferred-static]`. Who sets that bit is not found. Not a new picture: the Darkness "filler" case.
+- **Every VdSwap goes through `sub_8265F2B0`** (the only `__imp__VdSwap` call), from exactly two
+  places: FlipScreen, return address **0x82122F00**, and the keep-alive thread, **0x826719F4**
+  `[verified-numerically 2026-10-12]` (the `ctx.lr = ...` constants in the generated code).
+- `sub_8265F2B0` **skips VdSwap when `device+21532 != 0`** (same guard as The Darkness's `+21508`)
+  `[inferred-static]`. No direct store to it was found.
+- Consequence: patch 07's swap-parity rule slips by one for good after any keep-alive or skipped swap,
+  putting one eye on both halves `[hypothesis]` until a run counts them.
+
+## Clocks the game reads
+
+- `sub_82650F50` = **QueryPerformanceCounter(LARGE_INTEGER\*)** (mftb, re-read if the low word is 0);
+  5 callers, chiefly the wrapper `sub_822CE2D0` (returns the 64-bit count, 14 callers, including the
+  frame start in `sub_821802A8`) `[inferred-static 2026-10-12]`.
+- `sub_82650F40` = **GetTickCount** (KeTimeStampBundle +16); it is the ONLY reader of the bundle
+  pointer at 0x82000830 `[inferred-static]`. Wrappers: `sub_822CE290` (ms since a base at 0x829326E0,
+  55 callers, mostly engine/network code 0x821D-0x821F) and `sub_822CE230` (seconds, 11 callers,
+  including the object interpolation `sub_821DCD88`, which clamps a negative step to 0).
+- Raw `mftb` also sits inline in 215 functions, nearly all D3D/library (0x825-0x828: fences,
+  profiling) plus a renderer profiler `sub_8212C488`; not game time `[inferred-static]`.
+- **Frame limiter**, end of `sub_821802A8`: if the float at 0x8292864C (likely `MaxFPS`) is non-zero,
+  it loops `Sleep(1)` (`sub_822CE208`, return address **0x821806D4**) until `sub_822CE230` says the
+  frame is long enough. A pinned clock there would spin until the cap: it must be exempt
+  `[inferred-static]`. Also a configurable Sleep at the frame START (0x82928688, lr 0x82180368).
+- The resource loader `sub_821AFD48` (3 ms budget, QPC) runs inside the frame; with a pinned clock it
+  simply drains its queue `[inferred-static]`.
+- Strings `MaxFPS`, `TimeScale`, `SimulationTimeScale`, `PlayerTimeScale`, `MinFrameRate` exist.
+
+## Design (written, `C2_EYE_SYNC=1`)
+
+- Eye = parity of the count of FlipScreen presents that really reached VdSwap; a skipped present
+  redraws the same eye.
+- Every VdSwap is labelled before it is issued, in a 1024-slot table read by SDK patch 08 through the
+  exported `dk_sbs_swap_eye` (same name and encoding as The Darkness): FlipScreen swaps carry the eye
+  and sequence, keep-alive swaps carry -4 (repeat the pair, patch 08c).
+- Freeze (period 1): the right-eye frame sees both clocks as they were at the first read of its
+  left-eye frame, +1 tick (20 ns) per read; window = from the right frame's entry into
+  `sub_821802A8` to its present, so the limiter never runs pinned (`C2_FREEZE_FROM=present` is the
+  fallback, with the limiter Sleep releasing the clock). Only the frame thread is pinned; 250 ms cap.
+- `[compile-verified 2026-10-12]` (syntax only, llvm-mingw, mingw target). Not built, not run.
+
+## Open
+
+- Whether the simulation reads time only on the frame thread (`other-threads qpc= tick=` in the log).
+- Whether anything advances per frame regardless of time (a frame counter, a minimum step), which a
+  clock freeze cannot hold `[hypothesis]`; the same open item as The Darkness's cause 4.
+- What sets the keep-alive bit, and whether keep-alive swaps happen in gameplay at all.
+
 ### From the reader: 2026-10-12-lm-reader-camera-seam
 
 From: `/lm` reader (static only; nothing launched). Code: `staging/condemned-2-vr/camera-seam-2026-10-12/`.

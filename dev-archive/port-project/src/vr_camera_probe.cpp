@@ -31,8 +31,11 @@
 //     C2_CAM_EYE_LR=<hex> narrows it to one caller (use the lr the log prints for the player).
 //  3. C2_STEREO_PERIOD=N flips the sign every N flips (0 = fixed eye, +e = right eye).
 //
-// Not here yet (on purpose): holding the world still for the second eye, and side-by-side.
-// Those come after a run shows which view is the player's and how many sets there are per frame.
+//  4. C2_EYE_SYNC=1 (vr_eye_sync.cpp, 2026-10-12 draft): the eye follows the presents that
+//     really reached VdSwap, every swap is labelled for the side-by-side (dk_sbs_swap_eye),
+//     and the right eye's frame sees the clock of the left eye's start, so a pair is one
+//     moment. NOTE: its sign is physical: left eye = -right axis (the old mode started at +e).
+//     Without C2_EYE_SYNC everything below behaves exactly as before.
 
 #include "generated/default/condemned2recomp_pch.h"
 
@@ -43,6 +46,8 @@
 #include <cstring>
 #include <functional>
 #include <thread>
+
+#include "vr_eye_sync.h"
 
 DECLARE_REX_FUNC(sub_8212BAB0);
 DECLARE_REX_FUNC(sub_82122EA8);
@@ -112,7 +117,9 @@ bool SameSig(const Signature& a, const Signature& b) {
 
 // The frame end. Counts frames, flips the eye, prints the per-frame histograms.
 REX_HOOK_RAW(sub_82122EA8) {
+  c2vr::OnFlipBegin();
   __imp__sub_82122EA8(ctx, base);
+  c2vr::OnFlipEnd(ctx.r3.u32 != 0);
   if (ctx.r3.u32 == 0) return;  // returned 0: not in a state to present, nothing shown
 
   static bool thread_logged = false;
@@ -127,7 +134,8 @@ REX_HOOK_RAW(sub_82122EA8) {
   g_views_this_frame = g_shifted_this_frame = 0;
 
   const Settings& s = Get();
-  if (s.period > 0 && (g_flips % static_cast<uint64_t>(s.period)) == 0) g_sign = -g_sign;
+  if (!c2vr::SyncOn() && s.period > 0 && (g_flips % static_cast<uint64_t>(s.period)) == 0)
+    g_sign = -g_sign;
 
   if ((g_flips % kReportEveryFlips) == 0) {
     REXGPU_INFO("[C2VR] flips={} views/frame 0:{} 1:{} 2:{} 3:{} 4:{} 5+:{} | shifted/frame 0:{} 1:{} 2:{} 3+:{}",
@@ -140,6 +148,7 @@ REX_HOOK_RAW(sub_82122EA8) {
                   i, g.lr, g.view, g.mode, g.rect[0], g.rect[1], g.rect[2], g.rect[3], g.fov[0],
                   g.fov[1], g.nearz, g.farz, g.count);
     }
+    c2vr::ReportSync();
   }
 }
 
@@ -198,7 +207,7 @@ REX_HOOK_RAW(sub_8212BAB0) {
     const float rx = 1.0f - 2.0f * (qy * qy + qz * qz);
     const float ry = 2.0f * (qx * qy + qz * qw);
     const float rz = 2.0f * (qx * qz - qy * qw);
-    const float e = g_sign * s.cam_eye;
+    const float e = (c2vr::SyncOn() ? c2vr::EyeSignForView() : g_sign) * s.cam_eye;
     saved[0] = px; saved[1] = py; saved[2] = pz;
     StoreF(base, xf, px + e * rx);
     StoreF(base, xf + 4u, py + e * ry);
