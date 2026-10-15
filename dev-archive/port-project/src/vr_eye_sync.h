@@ -9,6 +9,9 @@ namespace c2vr {
 // True when C2_EYE_SYNC=1 and C2_CAM_EYE is set (otherwise the old per-flip behaviour runs).
 bool SyncOn();
 
+// The pair being drawn now: presents so far / (2 * period), the number SDK patch 08b/09 uses.
+uint32_t CurrentPair();
+
 // Sign of the eye offset for a view being built right now: -1 left eye, +1 right eye
 // (C2_EYE_SWAP=1 swaps them). Counts views built off the frame thread.
 float EyeSignForView();

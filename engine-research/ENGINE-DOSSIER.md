@@ -341,3 +341,19 @@ motion-blur zone, then compare against a run without them. The hook file logs ev
 - Source: <https://github.com/psxrestore/Condemned2Recomp/releases>.
 
 **Dev PC, 2026-10-12 (`/lm`):** our own build (on 0.1.0 game code) still starts and plays the opening film on the dev PC `[verified-live 2026-10-12, n=1]`, which corrects the board's old Ivy Bridge row: only the official prebuilt release needs AVX2.
+
+## 8. Headset output (OpenXR), built 2026-10-15 (`/pd`, game not run)
+
+- **SDK patch 09 (`DK_XR=1`)** sends each committed side-by-side pair to OpenXR as one frame, drawing
+  each eye into the headset's image (10:10:10:2 to 8-bit sRGB by a draw). Works against the simulator:
+  1,500 frames, no draw errors, each eye on its own side `[verified-live 2026-10-15, n=2]` (simulator
+  runs with a test program, not the game).
+- **Head into the camera (`C2_XR_HEAD=1`)**: one head sample per pair, turning set-view's camera
+  quaternion; OpenXR to LithTech = flip the quaternion's X and Y `[verified-numerically 2026-10-15]`
+  (3,003 checks). The pair's sample travels back to the SDK (`dk_xr_pair_sample`) so the headset gets
+  the exact pose the picture was drawn with.
+- **The `openxr_loader.dll` string in rexruntime.dll is SDL3's GPU OpenXR module** (`SDL_GPU_OPENXR=ON`,
+  `thirdparty/sdl3/src/gpu/xr/SDL_openxrdyn.c:33`); the SDK never calls SDL's GPU API, so it is dormant
+  `[inferred-static 2026-10-15]`. Not a ready-made path.
+- Open: the first game run (risk: `xrWaitFrame` blocks inside the presenter callback), the world unit,
+  the headset's own projection. Note: `modding-notes/2026-10-15-headset-output-per-eye.md`.

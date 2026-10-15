@@ -48,6 +48,7 @@
 #include <thread>
 
 #include "vr_eye_sync.h"
+#include "vr_head_pose.h"
 
 DECLARE_REX_FUNC(sub_8212BAB0);
 DECLARE_REX_FUNC(sub_82122EA8);
@@ -196,19 +197,35 @@ REX_HOOK_RAW(sub_8212BAB0) {
   const Settings& s = Get();
   const bool pick = s.cam_eye != 0.0f && xf != 0u && view == kCurrentView &&
                     mode == kModePerspective && (s.only_lr == 0u || s.only_lr == lr);
-  float saved[3] = {};
+  float saved[7] = {};
+  bool turned = false;
   if (pick) {
-    const float px = LoadF(base, xf), py = LoadF(base, xf + 4u), pz = LoadF(base, xf + 8u);
-    float qx = LoadF(base, xf + 12u), qy = LoadF(base, xf + 16u), qz = LoadF(base, xf + 20u),
-          qw = LoadF(base, xf + 24u);
+    for (int i = 0; i < 7; ++i) saved[i] = LoadF(base, xf + 4u * i);
+    float px = saved[0], py = saved[1], pz = saved[2];
+    float qx = saved[3], qy = saved[4], qz = saved[5], qw = saved[6];
     const float n = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
     if (n > 0.0f) { qx /= n; qy /= n; qz /= n; qw /= n; }
+    c2vr::NotePlayerFov(cur.fov[0], cur.fov[1]);
+    if (c2vr::HeadOn()) {  // C2_XR_HEAD=1: the headset turns the camera, same pose for both eyes
+      c2vr::Quat head;
+      c2vr::Vec3 move;
+      c2vr::HeadForPair(c2vr::CurrentPair(), &head, &move);
+      const c2vr::Quat q = c2vr::CameraWithHead({qx, qy, qz, qw}, head);
+      const c2vr::Vec3 d = c2vr::Rotate({qx, qy, qz, qw}, c2vr::XrToLithVec(move));
+      const float u = c2vr::UnitsPerMetre();
+      px += d.x * u; py += d.y * u; pz += d.z * u;
+      qx = q.x; qy = q.y; qz = q.z; qw = q.w;
+      StoreF(base, xf + 12u, qx);
+      StoreF(base, xf + 16u, qy);
+      StoreF(base, xf + 20u, qz);
+      StoreF(base, xf + 24u, qw);
+      turned = true;
+    }
     // right = q * (1,0,0)
     const float rx = 1.0f - 2.0f * (qy * qy + qz * qz);
     const float ry = 2.0f * (qx * qy + qz * qw);
     const float rz = 2.0f * (qx * qz - qy * qw);
     const float e = (c2vr::SyncOn() ? c2vr::EyeSignForView() : g_sign) * s.cam_eye;
-    saved[0] = px; saved[1] = py; saved[2] = pz;
     StoreF(base, xf, px + e * rx);
     StoreF(base, xf + 4u, py + e * ry);
     StoreF(base, xf + 8u, pz + e * rz);
@@ -227,5 +244,7 @@ REX_HOOK_RAW(sub_8212BAB0) {
     StoreF(base, xf, saved[0]);
     StoreF(base, xf + 4u, saved[1]);
     StoreF(base, xf + 8u, saved[2]);
+    if (turned)
+      for (int i = 3; i < 7; ++i) StoreF(base, xf + 4u * i, saved[i]);
   }
 }
