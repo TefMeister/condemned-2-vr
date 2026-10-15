@@ -32,3 +32,5 @@ then find the step where the bullet is BUILT, not a step that merely reports it.
 
 ⚠️ **Decided for RE Village for now (see `decisions.md`, 2026-09-21): NO two-hand condition there —
 the rifle is simply always accurate.** This idea stays floating for RE2 and everything else.
+
+Chosen by Tefa: 2026-10-15
