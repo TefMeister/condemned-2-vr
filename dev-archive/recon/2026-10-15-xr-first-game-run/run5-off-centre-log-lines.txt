@@ -1,0 +1,9 @@
+[2026-10-15 14:39:13.812] [info] [gpu] [t9076] [XR] frames=1 not_rendered=0 sample_hits=0 sample_misses=1 draw_errors=0 wait_ms_mean=0.00
+[2026-10-15 14:39:49.484] [info] [gpu] [t9076] [XR] frames=300 not_rendered=0 sample_hits=0 sample_misses=300 draw_errors=0 wait_ms_mean=0.26
+[2026-10-15 14:40:20.333] [info] [gpu] [t9076] [XR] frames=600 not_rendered=0 sample_hits=0 sample_misses=600 draw_errors=0 wait_ms_mean=0.16
+[2026-10-15 14:40:32.956] [info] [gpu] [t6772] [XR] headset view (both eyes): tangents left 1.3764 right 1.3764 up 0.9650 down 1.3901, eyes 0.0640 m apart
+[2026-10-15 14:40:32.956] [info] [gpu] [t6772] [C2VR] eye spread from the headset: 0.0640 m -> each eye 3.200 units
+[2026-10-15 14:40:33.901] [info] [gpu] [t6772] [C2VR] XR fov: player view drawn at the headset's tangents left=1.3764 right=1.3764 up=0.9650 down=1.3901
+[2026-10-15 14:40:33.901] [info] [gpu] [t6772] [C2VR] XR fov off-centre: game offset was (0.0000 0.0000); drawn half-widths (1.3764 1.1776) centre (0.0000 -0.2125)
+[2026-10-15 14:41:08.299] [info] [gpu] [t9076] [XR] frames=900 not_rendered=0 sample_hits=197 sample_misses=703 draw_errors=0 wait_ms_mean=0.24
+[2026-10-15 14:41:59.898] [info] [gpu] [t9076] [XR] frames=1200 not_rendered=0 sample_hits=497 sample_misses=703 draw_errors=0 wait_ms_mean=0.20

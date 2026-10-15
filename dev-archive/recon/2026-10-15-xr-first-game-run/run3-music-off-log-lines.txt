@@ -1,0 +1,26 @@
+[2026-10-15 14:22:50.761] [info] [core] [t23472] [C2FX] music_off=true screen_fx_off=true keep_headbob=false
+[2026-10-15 14:22:51.838] [info] [core] [t23472] [C2FX] sound apply: effects=0.75 music=0 -> 0 speech=1
+[2026-10-15 14:22:51.839] [info] [core] [t23472] [C2FX] sound apply: effects=0.75 music=0 -> 0 speech=1
+[2026-10-15 14:22:51.840] [info] [core] [t23472] [C2FX] sound apply: effects=0.75 music=0 -> 0 speech=1
+[2026-10-15 14:22:51.840] [info] [core] [t23472] [C2FX] sound apply: effects=0.75 music=0 -> 0 speech=1
+[2026-10-15 14:22:52.216] [info] [gpu] [t23388] [XR] runtime up: 11 formats offered, using DXGI 29; game fov export yes, pair export yes
+[2026-10-15 14:22:52.216] [info] [gpu] [t23388] [XR] session state 1
+[2026-10-15 14:22:52.216] [info] [gpu] [t23388] [XR] session state 2
+[2026-10-15 14:22:52.323] [info] [gpu] [t23388] [XR] session state 3
+[2026-10-15 14:22:52.323] [info] [gpu] [t23388] [XR] session state 4
+[2026-10-15 14:22:52.323] [info] [gpu] [t23388] [XR] session state 5
+[2026-10-15 14:22:52.340] [info] [gpu] [t23388] [XR] eye images 1280x720, image format 29 (typed), drawn as 29, gamma undone: yes
+[2026-10-15 14:22:52.356] [info] [gpu] [t23388] [XR] frames=1 not_rendered=0 sample_hits=0 sample_misses=1 draw_errors=0 wait_ms_mean=15.00
+[2026-10-15 14:23:28.643] [info] [gpu] [t23388] [XR] frames=300 not_rendered=0 sample_hits=0 sample_misses=300 draw_errors=0 wait_ms_mean=0.15
+[2026-10-15 14:23:59.443] [info] [gpu] [t23388] [XR] frames=600 not_rendered=0 sample_hits=0 sample_misses=600 draw_errors=0 wait_ms_mean=0.18
+[2026-10-15 14:24:35.159] [info] [gpu] [t23388] [XR] frames=900 not_rendered=0 sample_hits=0 sample_misses=900 draw_errors=0 wait_ms_mean=0.23
+[2026-10-15 14:25:07.918] [info] [gpu] [t23388] [XR] frames=1200 not_rendered=0 sample_hits=0 sample_misses=1200 draw_errors=0 wait_ms_mean=0.24
+[2026-10-15 14:25:17.105] [info] [gpu] [t23472] [C2VR] XR head=true pos=false fov=true units_per_m=100
+[2026-10-15 14:25:17.105] [info] [gpu] [t23472] [XR] headset view (both eyes): tangents left 1.3764 right 1.3764 up 0.9650 down 1.3901
+[2026-10-15 14:25:17.105] [info] [gpu] [t23472] [C2VR] XR head samples=1 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:25:18.057] [info] [gpu] [t23472] [C2VR] XR fov: player view drawn at the headset's tangents x=1.3764 y=1.3901
+[2026-10-15 14:25:55.920] [info] [gpu] [t23388] [XR] frames=1500 not_rendered=0 sample_hits=234 sample_misses=1266 draw_errors=0 wait_ms_mean=0.23
+[2026-10-15 14:26:46.226] [info] [gpu] [t23388] [XR] frames=1800 not_rendered=0 sample_hits=534 sample_misses=1266 draw_errors=0 wait_ms_mean=0.23
+[2026-10-15 14:26:57.017] [info] [gpu] [t23472] [C2VR] XR head samples=601 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:27:35.024] [info] [gpu] [t23388] [XR] frames=2100 not_rendered=0 sample_hits=834 sample_misses=1266 draw_errors=0 wait_ms_mean=0.24
+[2026-10-15 14:28:23.857] [info] [gpu] [t23388] [XR] frames=2400 not_rendered=0 sample_hits=1134 sample_misses=1266 draw_errors=0 wait_ms_mean=0.25
