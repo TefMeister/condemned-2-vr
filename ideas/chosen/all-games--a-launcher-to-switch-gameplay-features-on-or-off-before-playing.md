@@ -20,3 +20,5 @@ launcher could be a front end that writes that file and then starts the game. Ho
 can switch on or off without a restart differs per mod, and has not been checked.
 
 ---
+
+Chosen by Tefa: 2026-10-15

@@ -35,3 +35,5 @@ the promising ones; anything where the arms were deleted for the VR port has not
 action it belongs to varies enormously per game, and on some it may not be separable at all.
 
 ---
+
+Chosen by Tefa: 2026-10-15

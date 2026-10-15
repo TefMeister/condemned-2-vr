@@ -22,3 +22,5 @@ already does for the hands), then a menu with sliders like the RE2 hand tuning m
 found, the menu part is reusable.
 
 ---
+
+Chosen by Tefa: 2026-10-15

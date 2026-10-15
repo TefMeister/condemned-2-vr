@@ -33,3 +33,5 @@ Verbatim record: [`inbox/2026-09-21e-all-games-cancel-controller-drift-when-occl
 · Live work: `re-village-scope-vr` dossier §9ch.
 
 ---
+
+Chosen by Tefa: 2026-10-15

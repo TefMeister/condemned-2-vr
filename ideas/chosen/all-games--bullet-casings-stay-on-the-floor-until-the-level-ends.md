@@ -24,3 +24,5 @@ in this repo.**
 ---
 
 _Other categories appear as they arrive. Nothing is missing; they just haven't been needed yet._
+
+Chosen by Tefa: 2026-10-15
