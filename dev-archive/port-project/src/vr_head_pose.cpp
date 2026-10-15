@@ -29,6 +29,7 @@
 namespace {
 
 constexpr uint32_t kPairRing = 64;
+constexpr uint64_t kReportEverySamples = 600;  // one log line per this many head samples
 
 struct Settings {
   bool head = false, pos = false;
@@ -92,7 +93,7 @@ bool HeadForPair(uint32_t pair, Quat* q, Vec3* offset_m) {
     slot.p = {p[0] - g_origin.x, p[1] - g_origin.y, p[2] - g_origin.z};
     slot.id.store(ok ? id : 0u, std::memory_order_relaxed);
     slot.pair.store(pair, std::memory_order_release);
-    if ((g_samples + g_no_sample) % 600 == 1)
+    if ((g_samples + g_no_sample) % kReportEverySamples == 1)
       REXGPU_INFO("[C2VR] XR head samples={} none={} q=({:.3f} {:.3f} {:.3f} {:.3f})", g_samples,
                   g_no_sample, o[0], o[1], o[2], o[3]);
   }
