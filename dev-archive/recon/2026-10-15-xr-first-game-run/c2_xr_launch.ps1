@@ -1,0 +1,13 @@
+$env:DK_SBS = "1"
+$env:DK_SBS_HOLD = "1"
+$env:C2_EYE_SYNC = "1"
+$env:C2_CAM_EYE = "auto"
+$env:C2_STEREO_PERIOD = "1"
+$env:C2_VR_SCREEN_FX_OFF = "1"
+$env:DK_XR = "1"
+$env:C2_XR_HEAD = "1"
+$env:C2_XR_FOV = "1"
+$env:C2_MUSIC_OFF = "1"
+$env:XR_RUNTIME_JSON = "D:\claude video game stuff\tools\OpenXR-Simulator\openxr_simulator.json"
+$p = Start-Process -FilePath "D:\condemned-2-vr\build-local\condemned2recomp.exe" -WorkingDirectory "D:\condemned-2-vr\build-local" -PassThru
+"pid=$($p.Id)"

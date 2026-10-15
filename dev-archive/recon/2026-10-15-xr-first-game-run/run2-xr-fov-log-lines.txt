@@ -1,0 +1,18 @@
+[2026-10-15 14:18:58.691] [info] [core] [t23312] [C2FX] music_off=false screen_fx_off=true keep_headbob=false
+[2026-10-15 14:19:00.138] [info] [gpu] [t20616] [XR] runtime up: 11 formats offered, using DXGI 29; game fov export yes, pair export yes
+[2026-10-15 14:19:00.138] [info] [gpu] [t20616] [XR] session state 1
+[2026-10-15 14:19:00.138] [info] [gpu] [t20616] [XR] session state 2
+[2026-10-15 14:19:00.245] [info] [gpu] [t20616] [XR] session state 3
+[2026-10-15 14:19:00.246] [info] [gpu] [t20616] [XR] session state 4
+[2026-10-15 14:19:00.246] [info] [gpu] [t20616] [XR] session state 5
+[2026-10-15 14:19:00.260] [info] [gpu] [t20616] [XR] eye images 1280x720, image format 29 (typed), drawn as 29, gamma undone: yes
+[2026-10-15 14:19:00.267] [info] [gpu] [t20616] [XR] frames=1 not_rendered=0 sample_hits=0 sample_misses=1 draw_errors=0 wait_ms_mean=0.00
+[2026-10-15 14:19:38.172] [info] [gpu] [t20616] [XR] frames=300 not_rendered=0 sample_hits=0 sample_misses=300 draw_errors=0 wait_ms_mean=0.21
+[2026-10-15 14:20:12.141] [info] [gpu] [t20616] [XR] frames=600 not_rendered=0 sample_hits=0 sample_misses=600 draw_errors=0 wait_ms_mean=0.16
+[2026-10-15 14:20:44.248] [info] [gpu] [t23312] [C2VR] XR head=true pos=false fov=true units_per_m=100
+[2026-10-15 14:20:44.248] [info] [gpu] [t23312] [XR] headset view (both eyes): tangents left 1.3764 right 1.3764 up 0.9650 down 1.3901
+[2026-10-15 14:20:44.248] [info] [gpu] [t23312] [C2VR] XR head samples=1 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:20:45.398] [info] [gpu] [t23312] [C2VR] XR fov: player view drawn at the headset's tangents x=1.3764 y=1.3901
+[2026-10-15 14:20:48.024] [info] [gpu] [t20616] [XR] frames=900 not_rendered=0 sample_hits=12 sample_misses=888 draw_errors=0 wait_ms_mean=0.19
+[2026-10-15 14:21:38.490] [info] [gpu] [t20616] [XR] frames=1200 not_rendered=0 sample_hits=312 sample_misses=888 draw_errors=0 wait_ms_mean=0.21
+[2026-10-15 14:22:27.155] [info] [gpu] [t23312] [C2VR] XR head samples=601 none=0 q=(0.000 0.000 0.000 1.000)

@@ -1,0 +1,20 @@
+[2026-10-15 14:33:34.880] [info] [gpu] [t5828] [C2VR] settings cam_eye=3.2 only_lr=0x00000000 period=1
+[2026-10-15 14:33:35.781] [info] [gpu] [t14884] [XR] runtime up: 11 formats offered, using DXGI 29; game fov export yes, pair export yes
+[2026-10-15 14:33:35.781] [info] [gpu] [t14884] [XR] session state 1
+[2026-10-15 14:33:35.781] [info] [gpu] [t14884] [XR] session state 2
+[2026-10-15 14:33:35.903] [info] [gpu] [t14884] [XR] session state 3
+[2026-10-15 14:33:35.903] [info] [gpu] [t14884] [XR] session state 4
+[2026-10-15 14:33:35.903] [info] [gpu] [t14884] [XR] session state 5
+[2026-10-15 14:33:35.918] [info] [gpu] [t14884] [XR] eye images 1280x720, image format 29 (typed), drawn as 29, gamma undone: yes
+[2026-10-15 14:33:35.921] [info] [gpu] [t14884] [XR] frames=1 not_rendered=0 sample_hits=0 sample_misses=1 draw_errors=0 wait_ms_mean=0.00
+[2026-10-15 14:34:10.962] [info] [gpu] [t14884] [XR] frames=300 not_rendered=0 sample_hits=0 sample_misses=300 draw_errors=0 wait_ms_mean=0.05
+[2026-10-15 14:34:41.611] [info] [gpu] [t14884] [XR] frames=600 not_rendered=0 sample_hits=0 sample_misses=600 draw_errors=0 wait_ms_mean=0.19
+[2026-10-15 14:34:54.484] [info] [gpu] [t5828] [C2VR] XR head=true pos=false fov=true units_per_m=100
+[2026-10-15 14:34:54.484] [info] [gpu] [t5828] [XR] headset view (both eyes): tangents left 1.3764 right 1.3764 up 0.9650 down 1.3901, eyes 0.0640 m apart
+[2026-10-15 14:34:54.484] [info] [gpu] [t5828] [C2VR] XR head samples=1 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:34:54.484] [info] [gpu] [t5828] [C2VR] eye spread from the headset: 0.0640 m -> each eye 3.200 units
+[2026-10-15 14:34:54.484] [info] [gpu] [t5828] [C2VR] shift lr=0x8212B854 e=3.2 right=(1.0000 0.0000 0.0000) |right|=1.0000
+[2026-10-15 14:34:55.551] [info] [gpu] [t5828] [C2VR] XR fov: player view drawn at the headset's tangents x=1.3764 y=1.3901
+[2026-10-15 14:34:55.551] [info] [gpu] [t5828] [C2VR] shift lr=0x8212B854 e=-3.2 right=(-0.0000 0.0000 1.0000) |right|=1.0000
+[2026-10-15 14:34:55.552] [info] [gpu] [t5828] [C2VR] shift lr=0x8212B854 e=-3.2 right=(-0.0000 0.0000 1.0000) |right|=1.0000
+[2026-10-15 14:35:30.111] [info] [gpu] [t14884] [XR] frames=900 not_rendered=0 sample_hits=199 sample_misses=701 draw_errors=0 wait_ms_mean=0.23

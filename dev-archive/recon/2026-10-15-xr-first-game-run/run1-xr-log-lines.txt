@@ -1,0 +1,29 @@
+[2026-10-15 14:07:08.488] [info] [core] [t17856] [C2FX] music_off=false screen_fx_off=true keep_headbob=false
+[2026-10-15 14:07:10.755] [info] [gpu] [t9464] [XR] runtime up: 11 formats offered, using DXGI 29; game fov export yes, pair export yes
+[2026-10-15 14:07:10.755] [info] [gpu] [t9464] [XR] session state 1
+[2026-10-15 14:07:10.755] [info] [gpu] [t9464] [XR] session state 2
+[2026-10-15 14:07:11.045] [info] [gpu] [t9464] [XR] session state 3
+[2026-10-15 14:07:11.045] [info] [gpu] [t9464] [XR] session state 4
+[2026-10-15 14:07:11.045] [info] [gpu] [t9464] [XR] session state 5
+[2026-10-15 14:07:11.080] [info] [gpu] [t9464] [XR] eye images 1280x720, image format 29 (typed), drawn as 29, gamma undone: yes
+[2026-10-15 14:07:11.086] [info] [gpu] [t9464] [XR] frames=1 not_rendered=0 sample_hits=0 sample_misses=1 draw_errors=0 wait_ms_mean=0.00
+[2026-10-15 14:07:45.393] [info] [gpu] [t9464] [XR] frames=300 not_rendered=0 sample_hits=0 sample_misses=300 draw_errors=0 wait_ms_mean=0.16
+[2026-10-15 14:08:26.637] [info] [gpu] [t9464] [XR] frames=600 not_rendered=0 sample_hits=0 sample_misses=600 draw_errors=0 wait_ms_mean=0.21
+[2026-10-15 14:09:05.428] [info] [gpu] [t9464] [XR] frames=900 not_rendered=0 sample_hits=0 sample_misses=900 draw_errors=0 wait_ms_mean=0.19
+[2026-10-15 14:09:36.028] [info] [gpu] [t9464] [XR] frames=1200 not_rendered=0 sample_hits=0 sample_misses=1200 draw_errors=0 wait_ms_mean=0.17
+[2026-10-15 14:09:57.692] [info] [gpu] [t17856] [C2VR] XR head=true pos=false units_per_m=100
+[2026-10-15 14:09:57.692] [info] [gpu] [t17856] [C2VR] XR head samples=1 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:10:31.476] [info] [gpu] [t9464] [XR] frames=1500 not_rendered=0 sample_hits=180 sample_misses=1320 draw_errors=0 wait_ms_mean=0.17
+[2026-10-15 14:11:22.244] [info] [gpu] [t9464] [XR] frames=1800 not_rendered=0 sample_hits=480 sample_misses=1320 draw_errors=0 wait_ms_mean=0.17
+[2026-10-15 14:11:42.638] [info] [gpu] [t17856] [C2VR] XR head samples=601 none=0 q=(0.174 0.000 0.000 0.985)
+[2026-10-15 14:12:13.131] [info] [gpu] [t9464] [XR] frames=2100 not_rendered=0 sample_hits=780 sample_misses=1320 draw_errors=0 wait_ms_mean=0.16
+[2026-10-15 14:13:03.667] [info] [gpu] [t9464] [XR] frames=2400 not_rendered=0 sample_hits=1080 sample_misses=1320 draw_errors=0 wait_ms_mean=0.16
+[2026-10-15 14:13:23.662] [info] [gpu] [t17856] [C2VR] XR head samples=1201 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:13:53.447] [info] [gpu] [t9464] [XR] frames=2700 not_rendered=0 sample_hits=1380 sample_misses=1320 draw_errors=0 wait_ms_mean=0.17
+[2026-10-15 14:14:43.763] [info] [gpu] [t9464] [XR] frames=3000 not_rendered=0 sample_hits=1680 sample_misses=1320 draw_errors=0 wait_ms_mean=0.19
+[2026-10-15 14:15:04.141] [info] [gpu] [t17856] [C2VR] XR head samples=1801 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:15:34.420] [info] [gpu] [t9464] [XR] frames=3300 not_rendered=0 sample_hits=1980 sample_misses=1320 draw_errors=0 wait_ms_mean=0.19
+[2026-10-15 14:16:24.520] [info] [gpu] [t9464] [XR] frames=3600 not_rendered=0 sample_hits=2280 sample_misses=1320 draw_errors=0 wait_ms_mean=0.20
+[2026-10-15 14:16:44.269] [info] [gpu] [t17856] [C2VR] XR head samples=2401 none=0 q=(0.000 0.000 0.000 1.000)
+[2026-10-15 14:17:13.848] [info] [gpu] [t9464] [XR] frames=3900 not_rendered=0 sample_hits=2580 sample_misses=1320 draw_errors=0 wait_ms_mean=0.19
+[2026-10-15 14:18:03.782] [info] [gpu] [t9464] [XR] frames=4200 not_rendered=0 sample_hits=2880 sample_misses=1320 draw_errors=0 wait_ms_mean=0.19

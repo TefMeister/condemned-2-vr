@@ -75,8 +75,13 @@ inline void StoreF(uint8_t* base, uint32_t a, float v) {
   REX_STORE_U32(a, bits);
 }
 
+// C2_CAM_EYE=auto before the headset reports its eye distance: half of a typical 64 mm spread,
+// in game units (1 unit = 1 cm, reader 2026-10-15 from the player's size, speeds and gravity).
+constexpr float kAutoEyeFallbackUnits = 3.2f;
+
 struct Settings {
   float cam_eye = 0.0f;
+  bool cam_eye_auto = false;  // C2_CAM_EYE=auto: half the headset's own eye distance
   uint32_t only_lr = 0;
   int period = 0;
 };
@@ -84,7 +89,10 @@ struct Settings {
 const Settings& Get() {
   static const Settings s = [] {
     Settings r;
-    if (const char* v = std::getenv("C2_CAM_EYE")) r.cam_eye = static_cast<float>(std::atof(v));
+    if (const char* v = std::getenv("C2_CAM_EYE")) {
+      r.cam_eye_auto = std::strcmp(v, "auto") == 0;
+      r.cam_eye = r.cam_eye_auto ? kAutoEyeFallbackUnits : static_cast<float>(std::atof(v));
+    }
     if (const char* v = std::getenv("C2_CAM_EYE_LR")) r.only_lr = static_cast<uint32_t>(std::strtoul(v, nullptr, 16));
     if (const char* v = std::getenv("C2_STEREO_PERIOD")) r.period = std::atoi(v);
     REXGPU_INFO("[C2VR] settings cam_eye={} only_lr=0x{:08X} period={}", r.cam_eye, r.only_lr, r.period);
@@ -198,14 +206,51 @@ REX_HOOK_RAW(sub_8212BAB0) {
   const bool pick = s.cam_eye != 0.0f && xf != 0u && view == kCurrentView &&
                     mode == kModePerspective && (s.only_lr == 0u || s.only_lr == lr);
   float saved[7] = {};
-  bool turned = false;
+  const uint32_t offset = ctx.r7.u32;  // set view's off-centre pair (tangent units, + = right/up)
+  float saved_fov[2] = {}, saved_off[2] = {};
+  bool turned = false, widened = false, shifted = false;
   if (pick) {
     for (int i = 0; i < 7; ++i) saved[i] = LoadF(base, xf + 4u * i);
     float px = saved[0], py = saved[1], pz = saved[2];
     float qx = saved[3], qy = saved[4], qz = saved[5], qw = saved[6];
     const float n = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
     if (n > 0.0f) { qx /= n; qy /= n; qz /= n; qw /= n; }
-    c2vr::NotePlayerFov(cur.fov[0], cur.fov[1]);
+    float t[4];  // C2_XR_FOV=1: left, right, up, down tangents of the headset
+    if (fov != 0u && c2vr::HeadOn() && c2vr::HeadsetFov(t)) {
+      // ndc = (tan - offset) / half-width (reader 2026-10-15, sub_8212B010), so an exact fit is
+      // half-widths (L+R)/2, (U+D)/2 around a centre at (R-L)/2, (U-D)/2. Without an offset pair
+      // to write, cover both sides symmetrically instead.
+      saved_fov[0] = cur.fov[0];
+      saved_fov[1] = cur.fov[1];
+      float tx, ty, ox = 0.0f, oy = 0.0f;
+      if (offset != 0u) {
+        saved_off[0] = LoadF(base, offset);
+        saved_off[1] = LoadF(base, offset + 4u);
+        tx = 0.5f * (t[0] + t[1]);
+        ty = 0.5f * (t[2] + t[3]);
+        ox = 0.5f * (t[1] - t[0]);
+        oy = 0.5f * (t[2] - t[3]);
+        StoreF(base, offset, ox);
+        StoreF(base, offset + 4u, oy);
+        shifted = true;
+        static bool shown = false;
+        if (!shown) {
+          shown = true;
+          REXGPU_INFO("[C2VR] XR fov off-centre: game offset was ({:.4f} {:.4f}); drawn half-widths "
+                      "({:.4f} {:.4f}) centre ({:.4f} {:.4f})",
+                      saved_off[0], saved_off[1], tx, ty, ox, oy);
+        }
+      } else {
+        tx = t[0] > t[1] ? t[0] : t[1];
+        ty = t[2] > t[3] ? t[2] : t[3];
+      }
+      StoreF(base, fov, tx);
+      StoreF(base, fov + 4u, ty);
+      widened = true;
+      c2vr::NotePlayerTangents(tx - ox, tx + ox, ty + oy, ty - oy);
+    } else {
+      c2vr::NotePlayerFov(cur.fov[0], cur.fov[1]);
+    }
     if (c2vr::HeadOn()) {  // C2_XR_HEAD=1: the headset turns the camera, same pose for both eyes
       c2vr::Quat head;
       c2vr::Vec3 move;
@@ -225,7 +270,8 @@ REX_HOOK_RAW(sub_8212BAB0) {
     const float rx = 1.0f - 2.0f * (qy * qy + qz * qz);
     const float ry = 2.0f * (qx * qy + qz * qw);
     const float rz = 2.0f * (qx * qz - qy * qw);
-    const float e = (c2vr::SyncOn() ? c2vr::EyeSignForView() : g_sign) * s.cam_eye;
+    const float half = s.cam_eye_auto && c2vr::HeadOn() ? c2vr::HalfEyeUnits(s.cam_eye) : s.cam_eye;
+    const float e = (c2vr::SyncOn() ? c2vr::EyeSignForView() : g_sign) * half;
     StoreF(base, xf, px + e * rx);
     StoreF(base, xf + 4u, py + e * ry);
     StoreF(base, xf + 8u, pz + e * rz);
@@ -246,5 +292,13 @@ REX_HOOK_RAW(sub_8212BAB0) {
     StoreF(base, xf + 8u, saved[2]);
     if (turned)
       for (int i = 3; i < 7; ++i) StoreF(base, xf + 4u * i, saved[i]);
+    if (widened) {
+      StoreF(base, fov, saved_fov[0]);
+      StoreF(base, fov + 4u, saved_fov[1]);
+    }
+    if (shifted) {
+      StoreF(base, offset, saved_off[0]);
+      StoreF(base, offset + 4u, saved_off[1]);
+    }
   }
 }

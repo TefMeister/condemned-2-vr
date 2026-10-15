@@ -1,0 +1,60 @@
+--- a/src/graphics/d3d12/xr_output.cpp	2026-10-15 14:28:34.591726500 +0300
++++ b/src/graphics/d3d12/xr_output.cpp	2026-10-15 14:36:41.602633800 +0300
+@@ -84,6 +84,11 @@
+   XrTime predicted = 0;
+   XrDuration period = 0;
+   int lookahead = 2;
++  // Patch 09b: the headset's own view, both eyes together (left, right, up, down tangents, all
++  // positive), refreshed with every head sample, for rex_xr_headset_tangents.
++  float head_tan[4] = {0.0f, 0.0f, 0.0f, 0.0f};
++  bool head_tan_ok = false;
++  float eye_dist_m = 0.0f;  // distance between the two eye positions, for rex_xr_eye_distance
+ 
+   // From the game program, looked up once.
+   int (*pair_sample)(uint32_t pair, uint32_t* id) = nullptr;
+@@ -468,5 +473,45 @@
+   slot.views[0] = eyes[0];
+   slot.views[1] = eyes[1];
+   *id_out = id;
++  float tan4[4] = {0.0f, 0.0f, 0.0f, 0.0f};
++  for (const XrView& v : eyes) {
++    tan4[0] = std::fmax(tan4[0], std::tan(-v.fov.angleLeft));
++    tan4[1] = std::fmax(tan4[1], std::tan(v.fov.angleRight));
++    tan4[2] = std::fmax(tan4[2], std::tan(v.fov.angleUp));
++    tan4[3] = std::fmax(tan4[3], std::tan(-v.fov.angleDown));
++  }
++  const XrVector3f& a = eyes[0].pose.position;
++  const XrVector3f& b = eyes[1].pose.position;
++  const float dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
++  const float eye_dist = std::sqrt(dx * dx + dy * dy + dz * dz);
++  if (!s.head_tan_ok) {
++    rex::graphics::d3d12::XrOutput::Get().Log(
++        "[XR] headset view (both eyes): tangents left %.4f right %.4f up %.4f down %.4f, eyes %.4f m "
++        "apart",
++        tan4[0], tan4[1], tan4[2], tan4[3], eye_dist);
++  }
++  std::memcpy(s.head_tan, tan4, sizeof(tan4));
++  s.head_tan_ok = true;
++  s.eye_dist_m = eye_dist;
++  return 1;
++}
++
++// Patch 09b: how far apart the headset's two eyes are, in metres (the wearer's IPD setting).
++// 0 until a head sample.
++extern "C" __declspec(dllexport) int rex_xr_eye_distance(float* metres) {
++  auto& s = rex::graphics::d3d12::S();
++  std::lock_guard<std::mutex> lock(s.mutex);
++  if (!s.head_tan_ok || s.eye_dist_m <= 0.0f) return 0;
++  *metres = s.eye_dist_m;
++  return 1;
++}
++
++// Patch 09b: the view the headset itself shows, so the game can draw exactly that much.
++// Tangents left, right, up, down (all positive), the union of both eyes. 0 until a head sample.
++extern "C" __declspec(dllexport) int rex_xr_headset_tangents(float t[4]) {
++  auto& s = rex::graphics::d3d12::S();
++  std::lock_guard<std::mutex> lock(s.mutex);
++  if (!s.head_tan_ok) return 0;
++  std::memcpy(t, s.head_tan, sizeof(s.head_tan));
+   return 1;
+ }

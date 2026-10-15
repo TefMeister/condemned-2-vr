@@ -355,5 +355,53 @@ motion-blur zone, then compare against a run without them. The hook file logs ev
 - **The `openxr_loader.dll` string in rexruntime.dll is SDL3's GPU OpenXR module** (`SDL_GPU_OPENXR=ON`,
   `thirdparty/sdl3/src/gpu/xr/SDL_openxrdyn.c:33`); the SDK never calls SDL's GPU API, so it is dormant
   `[inferred-static 2026-10-15]`. Not a ready-made path.
-- Open: the first game run (risk: `xrWaitFrame` blocks inside the presenter callback), the world unit,
-  the headset's own projection. Note: `modding-notes/2026-10-15-headset-output-per-eye.md`.
+- ~~Open: the first game run (risk: `xrWaitFrame` blocks inside the presenter callback), the world unit,
+  the headset's own projection.~~ All three answered the same day, below. Note: `modding-notes/2026-10-15-headset-output-per-eye.md`.
+
+### 8a. In the game, live (2026-10-15, `/lm`, dev PC, simulator; note `modding-notes/2026-10-15-headset-output-in-game.md`)
+
+- **The game reaches the headset**: session FOCUSED, 4,200 frames, `draw_errors=0`, `not_rendered=0`,
+  menus and films included `[verified-live 2026-10-15, n=4 launches]`. **No freeze**: the wait inside the
+  presenter callback averaged 0.2 ms, since the game makes ~6 pairs a second on this PC. The threaded
+  design (`staging/condemned-2-vr/xr-thread-2026-10-15/`, `DK_XR_THREAD=1`, not built) stays parked;
+  it may matter when the game outruns the headset on the home PC `[hypothesis]`.
+- **Head turns the camera the right way on all three axes** (yaw left, pitch up, roll left, judged by eye
+  against a head-straight picture) `[verified-live 2026-10-15, n=1 each]`, assuming the simulator uses
+  OpenXR's standard signs `[inferred-static]`. Head samples arrive only once the player view exists
+  (`sample_hits` 0 in menus).
+- **The headset's own view (`C2_XR_FOV=1`, SDK patch 09b)**: `rex_xr_headset_tangents` gives the union of
+  both eyes' tangents (simulator Quest 3: left/right 1.3764, up 0.9650, down 1.3901); the player view is
+  drawn at x=1.3764, y=1.3901 (symmetric, covers the headset), the caller's FOV buffer is restored after,
+  and the same tangents go to the projection layer. Layer carried ±0.9425/±0.9472 rad, the flat picture
+  squashed upright as expected `[verified-live 2026-10-15, n=1]`. The set-view FOV pair is independent
+  per axis. **Now off-centre, exact fit:** set view's r7 pair (view +56/+60) is the picture centre in
+  tangent units: `sub_8212B010` builds Off = [1 0 -ox 0; 0 1 -oy 0; 0 0 1 0], P = [1/tx 0 0 0; 0 1/ty 0 0;
+  0 0 1 -near; 0 0 1 0] (far unused), projection V+120 = P·Off, so ndc = (tan - centre)/half-width, + =
+  right/up `[inferred-static 2026-10-15]` (reader). V+184, V+248 and k_mDrawPrimToClip include it; V+312
+  does not need it. The game passes (0,0) for the player view `[verified-live 2026-10-15, n=1]`.
+  `C2_XR_FOV=1` writes half-widths (L+R)/2, (U+D)/2 and centre (R-L)/2, (U-D)/2 (restored after the
+  call) and reports the same uneven box through `dk_xr_eye_fov`: layer up 0.7676 / down -0.9472 rad,
+  the headset's own, picture centre moved down `[verified-live 2026-10-15, n=1]`. Open: culling (no
+  frustum builder found; bottom-edge pop-in would show it) `[hypothesis]`; a second view at
+  0x82925AF0 (`sub_82123538`) reuses the current centre with its own FOV, possibly the weapon
+  `[hypothesis]`.
+- **World unit: 1 game unit = 1 cm** `[inferred-static 2026-10-15]`, from `database\Yeti.gamedb`
+  (`Layer01.Arch02`): `PlayerMovement` `StandDims` (40,95,40), `CrouchDims` (40,61,40), fall heights
+  100/500/1200; `Server/Player` `WalkSpeed` 235, `RunSpeed` 350, `Gravity` -2000, `JumpSpeed` 800
+  `[measured 2026-10-15]` (values read; meanings from names matched by the database's name hash
+  `h = h*919 + code`, a-z 1..26, 0-9 27..36, `_` 38, `[verified-numerically 2026-10-15, n=9]`). Only
+  centimetres fit every row. Reader `sub_823890B0` via the database interface at 0x82966BA8
+  `[inferred-static]`. Tools (`.Arch02` reader, XMem LZX via libmspack, gamedb reader):
+  `staging/condemned-2-vr/world-unit-2026-10-15/`.
+- **`C2_CAM_EYE` is the per-eye shift** (spread = 2x). The old live value 5 meant a 10 cm spread (world
+  ~0.64x life size). **`C2_CAM_EYE=auto`** (new) takes half the headset's own eye distance
+  (`rex_xr_eye_distance`, patch 09b) x `C2_XR_UNITS_PER_M` (100), falling back to 3.2 until the headset
+  reports: live, `eyes 0.0640 m apart -> each eye 3.200 units` `[verified-live 2026-10-15, n=1]`. That a
+  changed IPD setting follows mid-run is not tested.
+- **Music**: `"MusicEnable" "0"` in `autoexec.cfg` already zeroes the music volume before the mixer
+  (`C2_MUSIC_OFF=1` logs `music=0 -> 0`) `[verified-live 2026-10-15, n=1]`. The main menu still plays a
+  steady sound at about -32 dB with or without it `[measured 2026-10-15]`: music on another path or menu
+  ambience, unknown; a clip waits for Tefa's ears.
+- Run line now: `DK_SBS=1 DK_SBS_HOLD=1 C2_EYE_SYNC=1 C2_CAM_EYE=auto C2_STEREO_PERIOD=1
+  C2_VR_SCREEN_FX_OFF=1 C2_MUSIC_OFF=1 DK_XR=1 C2_XR_HEAD=1 C2_XR_FOV=1` (+ `XR_RUNTIME_JSON` for the
+  simulator only). Script: `dev-archive/recon/2026-10-15-xr-first-game-run/c2_xr_launch.ps1`.

@@ -18,6 +18,17 @@ bool HeadForPair(uint32_t pair, Quat* q, Vec3* offset_m);
 
 float UnitsPerMetre();
 
+// C2_XR_FOV=1: the headset's own view, both eyes covered, as tangents left, right, up, down (all
+// positive), from SDK patch 09b. False when off, or before the headset has given a sample.
+bool HeadsetFov(float t[4]);
+
+// The tangents the player view is really drawn with, for dk_xr_eye_fov (off-centre allowed).
+void NotePlayerTangents(float left, float right, float up, float down);
+
+// C2_CAM_EYE=auto: half the headset's own eye distance in game units (SDK patch 09b,
+// rex_xr_eye_distance), or `fallback` until the headset has reported one.
+float HalfEyeUnits(float fallback);
+
 // The player camera's FOV tangents as set-view receives them, for dk_xr_eye_fov.
 void NotePlayerFov(float tan_x, float tan_y);
 
