@@ -31,9 +31,11 @@ using the project's own baseline produces a binary that runs correctly on a 2012
 **Intel Core i7-3770S** (Ivy Bridge). Details and measurements are in
 [`patches/UPSTREAM-REPORT.md`](patches/UPSTREAM-REPORT.md).
 
-VR work has not started. The renderer is **D3D12**, and because the whole program is rebuilt
-from readable source, stereo rendering can be added at the source level rather than injected
-from outside — which is a far better starting position than most flat-to-VR projects get.
+**VR work is under way (2026-10-12).** The renderer is **D3D12**, and because the whole program is
+rebuilt from readable source, stereo rendering is added at the source level rather than injected
+from outside. We found where the game sets its camera; splitting it gives two viewpoints, and the
+game now makes clean left/right stereo pairs on the monitor, both eyes at the same moment, with the
+blur and screen effects switched off for VR. The headset comes next.
 
 ## What this is not
 
