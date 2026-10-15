@@ -1,0 +1,1133 @@
+diff --git a/include/rex/graphics/d3d12/command_processor.h b/include/rex/graphics/d3d12/command_processor.h
+index 01bbd5b..b5214d3 100644
+--- a/include/rex/graphics/d3d12/command_processor.h
++++ b/include/rex/graphics/d3d12/command_processor.h
+@@ -238,6 +238,11 @@ class D3D12CommandProcessor : public CommandProcessor {
+            sbs_count_forced_ = 0;
+   // 08c: swaps of the game's filler packets (-4) repeat the last pair instead of showing.
+   uint64_t sbs_count_repeat_ = 0;
++  // DK_XR=1 (patch 09): the pair just laid out goes to the headset after the submission.
++  void SubmitPairToHeadset();
++  bool xr_ready_ = false;
++  uint32_t xr_pair_ = 0;
++  Microsoft::WRL::ComPtr<ID3D12Resource> xr_mono_;  // a picture with no eye, for both
+ 
+   void OnPrimaryBufferEnd() override;
+ 
+diff --git b/include/rex/graphics/d3d12/xr_output.h b/include/rex/graphics/d3d12/xr_output.h
+new file mode 100644
+index 0000000..2cb90d0
+--- /dev/null
++++ b/include/rex/graphics/d3d12/xr_output.h
+@@ -0,0 +1,51 @@
++// DK_XR=1 (Condemned 2 / Darkness VR, patch 09, 2026-10-15): hand each eye of the side-by-side pair
++// to an OpenXR headset. Rides on DK_SBS=1: the eye textures it sends are the ones patch 08b fills.
++//
++// Off unless DK_XR=1, so a build without the switch behaves exactly as before. Self-contained on
++// purpose (Windows, D3D12 and the OpenXR headers only), so tests can drive it without the SDK.
++//
++// Threads: SubmitPair runs on the GPU (command processor) thread. rex_xr_sample_head (exported
++// below) is called by the game program from its own frame thread; the two share only a small
++// locked ring of head samples.
++#pragma once
++
++#include <cstdint>
++
++#include <windows.h>
++#include <d3d12.h>
++
++namespace rex::graphics::d3d12 {
++
++class XrOutput {
++ public:
++  using LogFn = void (*)(const char* line);
++
++  static XrOutput& Get();
++  // DK_XR=1 in the environment.
++  static bool Wanted();
++
++  void SetLog(LogFn fn) { log_ = fn; }
++
++  // Send one stereo pair. left/right are W x H textures resting in `state`; they are read after
++  // everything already submitted to `queue`, and left in `state` again. pair numbers the pair the
++  // same way the game program does (its present count / (2 * period)), so the head sample the game
++  // rendered it with can be found; pass UINT32_MAX when the picture has no pair (a mono swap).
++  void SubmitPair(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource* left,
++                  ID3D12Resource* right, uint32_t width, uint32_t height,
++                  D3D12_RESOURCE_STATES state, uint32_t pair);
++
++  void Log(const char* fmt, ...);
++
++ private:
++  LogFn log_ = nullptr;
++};
++
++}  // namespace rex::graphics::d3d12
++
++// For the game program (it looks these up with GetProcAddress on rexgpu-xenos.dll).
++// Samples the headset now and keeps the sample for the frame that will show it. Writes a sample id
++// (hand it back through dk_xr_pair_sample), the head's orientation (x, y, z, w) and position
++// (metres) in OpenXR's local space: +X right, +Y up, -Z forward, right-handed. Returns 1 when the
++// headset is tracking, 0 otherwise (outputs then hold identity).
++extern "C" __declspec(dllexport) int rex_xr_sample_head(uint32_t* id_out, float orient_xyzw[4],
++                                                        float pos_xyz[3]);
+diff --git a/src/graphics/CMakeLists.txt b/src/graphics/CMakeLists.txt
+index 0d8f8af..f6ab88c 100644
+--- a/src/graphics/CMakeLists.txt
++++ b/src/graphics/CMakeLists.txt
+@@ -82,6 +82,8 @@ if(REXGLUE_USE_D3D12)
+         d3d12/texture_cache.cpp
+         d3d12/deferred_command_list.cpp
+         d3d12/pipeline_cache.cpp
++        d3d12/xr_output.cpp   # DK_XR (patch 09)
++        d3d12/xr_blit.cpp
+     )
+ endif()
+ 
+@@ -107,6 +109,7 @@ set_target_properties(rexgpu-xenos PROPERTIES
+ 
+ target_include_directories(rexgpu-xenos PRIVATE
+     ${REXGLUE_ROOT}/thirdparty/renderdoc
++    ${REXGLUE_ROOT}/thirdparty/sdl3/src/video/khronos  # openxr/openxr.h (DK_XR, patch 09)
+     ${REXGLUE_ROOT}  # For thirdparty/dxbc/DXBCChecksum.h include
+ )
+ 
+diff --git a/src/graphics/d3d12/command_processor.cpp b/src/graphics/d3d12/command_processor.cpp
+index 5739a20..a35b595 100644
+--- a/src/graphics/d3d12/command_processor.cpp
++++ b/src/graphics/d3d12/command_processor.cpp
+@@ -25,6 +25,7 @@
+ #include <rex/graphics/d3d12/command_processor.h>
+ #include <rex/graphics/d3d12/graphics_system.h>
+ #include <rex/graphics/d3d12/shader.h>
++#include <rex/graphics/d3d12/xr_output.h>
+ #include <rex/graphics/flags.h>
+ #include <rex/graphics/registers.h>
+ #include <rex/graphics/util/draw.h>
+@@ -2284,6 +2285,7 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
+                                 apply_gamma_dest_initial_state);
+         }
+ 
++        xr_ready_ = false;
+         if (sbs_enabled) {
+           ComposeSideBySidePair(guest_output_resource, guest_output_width, guest_output_height);
+         }
+@@ -2293,6 +2295,7 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
+         // queue.
+         SubmitBarriers();
+         EndSubmission(true);
++        SubmitPairToHeadset();  // 09: after the submission, so the eye textures are complete
+         return true;
+       });
+ 
+@@ -2301,6 +2304,28 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
+   EndSubmission(true);
+ }
+ 
++// DK_XR=1 (patch 09, 2026-10-15): hand the pair ComposeSideBySidePair just laid out to an OpenXR
++// headset. Off unless DK_XR=1 (and it needs DK_SBS=1 for the pair). xr_output.cpp has the rest.
++void D3D12CommandProcessor::SubmitPairToHeadset() {
++  using rex::graphics::d3d12::XrOutput;
++  if (!xr_ready_ || !XrOutput::Wanted()) return;
++  xr_ready_ = false;
++  XrOutput& xr = XrOutput::Get();
++  static bool log_set = [&xr] {
++    xr.SetLog([](const char* line) { REXGPU_INFO("{}", line); });
++    return true;
++  }();
++  (void)log_set;
++  const ui::d3d12::D3D12Provider& provider = GetD3D12Provider();
++  ID3D12Resource* left = xr_mono_ ? xr_mono_.Get() : sbs_eye_[0].Get();
++  ID3D12Resource* right = xr_mono_ ? xr_mono_.Get() : sbs_eye_[1].Get();
++  if (left && right) {
++    xr.SubmitPair(provider.GetDevice(), provider.GetDirectQueue(), left, right, sbs_width_,
++                  sbs_height_, D3D12_RESOURCE_STATE_COPY_SOURCE, xr_pair_);
++  }
++  xr_mono_.Reset();
++}
++
+ void D3D12CommandProcessor::ComposeSideBySidePair(ID3D12Resource* guest_output, uint32_t width,
+                                                   uint32_t height) {
+   // guest_output is 2W x H, in kGuestOutputInternalState, with this swap's image in [0, W).
+@@ -2399,6 +2424,10 @@ void D3D12CommandProcessor::ComposeSideBySidePair(ID3D12Resource* guest_output,
+     } else if (!sbs_hold) {
+       copy_into(sbs_eye_[eye].Get(), &cur_loc);
+       sbs_eye_valid_[eye] = true;
++      if (eye == 1 && sbs_eye_valid_[0]) {  // 09: a right after a left is a pair for the headset
++        xr_ready_ = true;
++        xr_pair_ = sbs_swap_serial_ / (2u * sbs_period);
++      }
+     } else {
+       const uint32_t pair = sbs_swap_serial_ / (2u * sbs_period);
+       if (eye == 0) {
+@@ -2419,6 +2448,8 @@ void D3D12CommandProcessor::ComposeSideBySidePair(ID3D12Resource* guest_output,
+         sbs_pending_valid_ = false;
+         sbs_orphan_run_ = 0;
+         ++sbs_count_committed_;
++        xr_ready_ = true;  // 09: the headset gets exactly the pairs the window shows
++        xr_pair_ = pair;
+       } else {
+         // A right with no matching left (its left was drained, or a filler took the slot).
+         ++sbs_count_orphan_right_;
+@@ -2470,6 +2501,9 @@ void D3D12CommandProcessor::ComposeSideBySidePair(ID3D12Resource* guest_output,
+     deferred_command_list_.D3DCopyTextureRegion(&out_loc, width, 0, 0, &cur_loc, &half);
+     ++(eye == -1 ? sbs_count_mono_ : sbs_count_miss_);
+     sbs_pending_valid_ = false;  // 08b: a picture with no eye ends any waiting pair
++    xr_mono_ = sbs_current_;     // 09: the headset shows it to both eyes, fixed to the face
++    xr_ready_ = true;
++    xr_pair_ = UINT32_MAX;
+   }
+   PushTransitionBarrier(guest_output, D3D12_RESOURCE_STATE_COPY_DEST, kOutputState);
+ 
+diff --git b/src/graphics/d3d12/xr_blit.cpp b/src/graphics/d3d12/xr_blit.cpp
+new file mode 100644
+index 0000000..9991ce3
+--- /dev/null
++++ b/src/graphics/d3d12/xr_blit.cpp
+@@ -0,0 +1,241 @@
++// Patch 09 (DK_XR): draws an eye texture into a headset swapchain image. See xr_blit.h.
++//
++// Self-contained (Windows + D3D12 only): d3dcompiler_47.dll and D3D12SerializeRootSignature are
++// looked up at run time, so nothing new is linked and a test program can use this file as is.
++
++#include "xr_blit.h"
++
++#include <d3dcompiler.h>
++
++#include <cstring>
++#include <utility>
++
++namespace rex::graphics::d3d12::xr {
++
++namespace {
++
++// One triangle that covers the screen; the picture is drawn 1:1 (the image is the eye's size).
++// decode (b0.x) undoes sRGB when the target view re-encodes it, so the stored bytes stay the same.
++constexpr char kShader[] = R"(
++cbuffer Params : register(b0) { uint decode; };
++Texture2D<float4> eye : register(t0);
++SamplerState samp : register(s0);
++struct V { float4 pos : SV_Position; float2 uv : TEXCOORD0; };
++V vs_main(uint id : SV_VertexID) {
++  V o;
++  o.uv = float2((id << 1) & 2, id & 2);
++  o.pos = float4(o.uv * float2(2, -2) + float2(-1, 1), 0, 1);
++  return o;
++}
++float3 srgb_to_linear(float3 c) {
++  return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
++}
++float4 ps_main(V i) : SV_Target {
++  float3 c = eye.Sample(samp, i.uv).rgb;
++  if (decode != 0) c = srgb_to_linear(c);
++  return float4(c, 1);
++}
++)";
++
++using D3DCompileFn = decltype(&D3DCompile);
++using SerializeRootFn = decltype(&D3D12SerializeRootSignature);
++
++bool Compile(D3DCompileFn compile, const char* entry, const char* target,
++             Microsoft::WRL::ComPtr<ID3DBlob>& out) {
++  Microsoft::WRL::ComPtr<ID3DBlob> errors;
++  return SUCCEEDED(compile(kShader, sizeof(kShader) - 1, "dk_xr_blit", nullptr, nullptr, entry,
++                           target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &out, &errors));
++}
++
++D3D12_RESOURCE_BARRIER Transition(ID3D12Resource* r, D3D12_RESOURCE_STATES from,
++                                  D3D12_RESOURCE_STATES to) {
++  D3D12_RESOURCE_BARRIER b = {};
++  b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
++  b.Transition.pResource = r;
++  b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
++  b.Transition.StateBefore = from;
++  b.Transition.StateAfter = to;
++  return b;
++}
++
++}  // namespace
++
++bool EyeBlit::Init(ID3D12Device* device, DXGI_FORMAT rtv_format, bool decode_srgb,
++                   const char** error) {
++  device_ = device;
++  rtv_format_ = rtv_format;
++  decode_srgb_ = decode_srgb;
++
++  HMODULE compiler = LoadLibraryW(L"d3dcompiler_47.dll");
++  auto compile = compiler ? reinterpret_cast<D3DCompileFn>(
++                                reinterpret_cast<void*>(GetProcAddress(compiler, "D3DCompile")))
++                          : nullptr;
++  HMODULE d3d12 = GetModuleHandleW(L"d3d12.dll");
++  auto serialize = d3d12 ? reinterpret_cast<SerializeRootFn>(reinterpret_cast<void*>(
++                               GetProcAddress(d3d12, "D3D12SerializeRootSignature")))
++                         : nullptr;
++  if (!compile || !serialize) {
++    *error = "d3dcompiler_47.dll or D3D12SerializeRootSignature not found";
++    return false;
++  }
++  Microsoft::WRL::ComPtr<ID3DBlob> vs, ps, root_blob, root_err;
++  if (!Compile(compile, "vs_main", "vs_5_0", vs) || !Compile(compile, "ps_main", "ps_5_0", ps)) {
++    *error = "blit shader did not compile";
++    return false;
++  }
++
++  D3D12_DESCRIPTOR_RANGE range = {};
++  range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
++  range.NumDescriptors = 1;
++  D3D12_ROOT_PARAMETER params[2] = {};
++  params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
++  params[0].DescriptorTable.NumDescriptorRanges = 1;
++  params[0].DescriptorTable.pDescriptorRanges = &range;
++  params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
++  params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
++  params[1].Constants.Num32BitValues = 1;
++  params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
++  D3D12_STATIC_SAMPLER_DESC sampler = {};
++  sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;  // 1:1, so point keeps every pixel exact
++  sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
++  sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
++  sampler.MaxLOD = D3D12_FLOAT32_MAX;
++  sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
++  D3D12_ROOT_SIGNATURE_DESC root_desc = {};
++  root_desc.NumParameters = 2;
++  root_desc.pParameters = params;
++  root_desc.NumStaticSamplers = 1;
++  root_desc.pStaticSamplers = &sampler;
++  if (FAILED(serialize(&root_desc, D3D_ROOT_SIGNATURE_VERSION_1, &root_blob, &root_err)) ||
++      FAILED(device->CreateRootSignature(0, root_blob->GetBufferPointer(),
++                                         root_blob->GetBufferSize(), IID_PPV_ARGS(&root_)))) {
++    *error = "root signature failed";
++    return false;
++  }
++
++  D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
++  pso.pRootSignature = root_.Get();
++  pso.VS = {vs->GetBufferPointer(), vs->GetBufferSize()};
++  pso.PS = {ps->GetBufferPointer(), ps->GetBufferSize()};
++  D3D12_RENDER_TARGET_BLEND_DESC& blend = pso.BlendState.RenderTarget[0];
++  blend.SrcBlend = blend.SrcBlendAlpha = D3D12_BLEND_ONE;  // blending is off; valid values anyway
++  blend.DestBlend = blend.DestBlendAlpha = D3D12_BLEND_ZERO;
++  blend.BlendOp = blend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
++  blend.LogicOp = D3D12_LOGIC_OP_NOOP;
++  blend.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
++  pso.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;  // depth is off
++  pso.SampleMask = UINT_MAX;
++  pso.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
++  pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
++  pso.RasterizerState.DepthClipEnable = TRUE;
++  pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
++  pso.NumRenderTargets = 1;
++  pso.RTVFormats[0] = rtv_format;
++  pso.SampleDesc.Count = 1;
++  if (FAILED(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&pso_)))) {
++    *error = "pipeline state failed";
++    return false;
++  }
++
++  D3D12_DESCRIPTOR_HEAP_DESC srv = {D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, kFramesInFlight * 2,
++                                    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 0};
++  D3D12_DESCRIPTOR_HEAP_DESC rtv = {D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2,
++                                    D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 0};
++  if (FAILED(device->CreateDescriptorHeap(&srv, IID_PPV_ARGS(&srv_heap_))) ||
++      FAILED(device->CreateDescriptorHeap(&rtv, IID_PPV_ARGS(&rtv_heap_)))) {
++    *error = "descriptor heaps failed";
++    return false;
++  }
++  srv_step_ = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
++  rtv_step_ = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
++
++  for (auto& a : alloc_) {
++    if (FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&a)))) {
++      *error = "command allocator failed";
++      return false;
++    }
++  }
++  if (FAILED(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc_[0].Get(),
++                                       nullptr, IID_PPV_ARGS(&list_))) ||
++      FAILED(list_->Close()) ||
++      FAILED(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)))) {
++    *error = "command list or fence failed";
++    return false;
++  }
++  fence_event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
++  return fence_event_ != nullptr;
++}
++
++bool EyeBlit::Draw(ID3D12CommandQueue* queue, ID3D12Resource* const src[2],
++                   D3D12_RESOURCE_STATES src_state, ID3D12Resource* const dst[2], uint32_t width,
++                   uint32_t height, const char** error) {
++  const uint32_t slot = frame_ % kFramesInFlight;
++  if (fence_->GetCompletedValue() < slot_value_[slot]) {
++    fence_->SetEventOnCompletion(slot_value_[slot], fence_event_);
++    WaitForSingleObject(fence_event_, 1000);
++  }
++  if (FAILED(alloc_[slot]->Reset()) || FAILED(list_->Reset(alloc_[slot].Get(), pso_.Get()))) {
++    *error = "command list reset failed";
++    return false;
++  }
++
++  const D3D12_RESOURCE_STATES kRead = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
++  D3D12_RESOURCE_BARRIER to_read[2];
++  uint32_t n = 0;
++  to_read[n++] = Transition(src[0], src_state, kRead);
++  if (src[1] != src[0]) to_read[n++] = Transition(src[1], src_state, kRead);
++  if (src_state != kRead) list_->ResourceBarrier(n, to_read);
++
++  ID3D12DescriptorHeap* heaps[] = {srv_heap_.Get()};
++  list_->SetDescriptorHeaps(1, heaps);
++  list_->SetGraphicsRootSignature(root_.Get());
++  list_->SetGraphicsRoot32BitConstant(1, decode_srgb_ ? 1u : 0u, 0);
++  list_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
++  const D3D12_VIEWPORT vp = {0.0f, 0.0f, float(width), float(height), 0.0f, 1.0f};
++  const D3D12_RECT sc = {0, 0, LONG(width), LONG(height)};
++  list_->RSSetViewports(1, &vp);
++  list_->RSSetScissorRects(1, &sc);
++
++  for (int e = 0; e < 2; ++e) {
++    D3D12_CPU_DESCRIPTOR_HANDLE srv_cpu = srv_heap_->GetCPUDescriptorHandleForHeapStart();
++    D3D12_GPU_DESCRIPTOR_HANDLE srv_gpu = srv_heap_->GetGPUDescriptorHandleForHeapStart();
++    srv_cpu.ptr += SIZE_T(slot * 2 + e) * srv_step_;
++    srv_gpu.ptr += UINT64(slot * 2 + e) * srv_step_;
++    D3D12_SHADER_RESOURCE_VIEW_DESC sv = {};
++    sv.Format = src[e]->GetDesc().Format;
++    sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
++    sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
++    sv.Texture2D.MipLevels = 1;
++    device_->CreateShaderResourceView(src[e], &sv, srv_cpu);
++
++    D3D12_CPU_DESCRIPTOR_HANDLE rtv = rtv_heap_->GetCPUDescriptorHandleForHeapStart();
++    rtv.ptr += SIZE_T(e) * rtv_step_;
++    D3D12_RENDER_TARGET_VIEW_DESC rv = {};
++    rv.Format = rtv_format_;
++    rv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
++    device_->CreateRenderTargetView(dst[e], &rv, rtv);
++
++    list_->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
++    list_->SetGraphicsRootDescriptorTable(0, srv_gpu);
++    list_->DrawInstanced(3, 1, 0, 0);
++  }
++
++  if (src_state != kRead) {
++    for (uint32_t i = 0; i < n; ++i) {
++      std::swap(to_read[i].Transition.StateBefore, to_read[i].Transition.StateAfter);
++    }
++    list_->ResourceBarrier(n, to_read);
++  }
++  if (FAILED(list_->Close())) {
++    *error = "command list close failed";
++    return false;
++  }
++  ID3D12CommandList* lists[] = {list_.Get()};
++  queue->ExecuteCommandLists(1, lists);
++  slot_value_[slot] = next_value_;
++  queue->Signal(fence_.Get(), next_value_++);
++  ++frame_;
++  return true;
++}
++
++}  // namespace rex::graphics::d3d12::xr
+diff --git b/src/graphics/d3d12/xr_blit.h b/src/graphics/d3d12/xr_blit.h
+new file mode 100644
+index 0000000..2fa9393
+--- /dev/null
++++ b/src/graphics/d3d12/xr_blit.h
+@@ -0,0 +1,46 @@
++// Patch 09 (DK_XR): draws an eye texture into a headset swapchain image. A draw rather than a copy,
++// because the game's output is 10:10:10:2 and headsets offer 8-bit sRGB images.
++#pragma once
++
++#include <cstdint>
++
++#include <windows.h>
++#include <d3d12.h>
++#include <wrl/client.h>
++
++namespace rex::graphics::d3d12::xr {
++
++class EyeBlit {
++ public:
++  static constexpr uint32_t kFramesInFlight = 3;
++
++  // rtv_format: the format to draw with (the image's own, or its non-sRGB twin for a typeless image).
++  // decode_srgb: the image is drawn through an sRGB view, so undo the picture's own gamma first.
++  bool Init(ID3D12Device* device, DXGI_FORMAT rtv_format, bool decode_srgb, const char** error);
++
++  // Records and runs, on `queue`, both eyes for one frame: src[e] (in src_state) -> dst[e] (in
++  // RENDER_TARGET, as OpenXR hands D3D12 images out). Waits for the GPU only when every slot
++  // is still busy. Render-target views are read when recorded, so two are enough.
++  bool Draw(ID3D12CommandQueue* queue, ID3D12Resource* const src[2],
++            D3D12_RESOURCE_STATES src_state, ID3D12Resource* const dst[2], uint32_t width,
++            uint32_t height, const char** error);
++
++ private:
++  Microsoft::WRL::ComPtr<ID3D12Device> device_;
++  Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
++  Microsoft::WRL::ComPtr<ID3D12PipelineState> pso_;
++  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srv_heap_;  // kFramesInFlight * 2, shader-visible
++  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap_;  // 2, one per eye
++  Microsoft::WRL::ComPtr<ID3D12CommandAllocator> alloc_[kFramesInFlight];
++  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> list_;
++  Microsoft::WRL::ComPtr<ID3D12Fence> fence_;
++  HANDLE fence_event_ = nullptr;
++  uint64_t slot_value_[kFramesInFlight] = {};
++  uint64_t next_value_ = 1;
++  uint32_t frame_ = 0;
++  uint32_t srv_step_ = 0, rtv_step_ = 0;
++  DXGI_FORMAT rtv_format_ = DXGI_FORMAT_UNKNOWN;
++  bool decode_srgb_ = false;
++};
++
++}  // namespace rex::graphics::d3d12::xr
+diff --git b/src/graphics/d3d12/xr_output.cpp b/src/graphics/d3d12/xr_output.cpp
+new file mode 100644
+index 0000000..cb6b890
+--- /dev/null
++++ b/src/graphics/d3d12/xr_output.cpp
+@@ -0,0 +1,472 @@
++// Patch 09 (DK_XR=1): hand each eye of the stereo pair to an OpenXR headset. See xr_output.h.
++//
++// The pair comes from patch 08b (DK_SBS=1 DK_SBS_HOLD=1): two W x H textures, the same moment
++// seen from two eyes. Each pair becomes one OpenXR frame: wait, begin, draw both eyes into the
++// headset's images, end with one projection layer.
++//
++// Which pose goes with the picture: the game program samples the head (rex_xr_sample_head) when it
++// builds a pair's camera and tells us which sample it used (its dk_xr_pair_sample). We send the eye
++// poses of that very sample, so the headset can correct for the time in between. A game program
++// without that export gets the newest pose instead: the picture then stays fixed to the face.
++//
++// Which field of view goes with the picture: the game program's dk_xr_eye_fov (the tangents it
++// really draws with) when it has one, else the headset's own.
++//
++// Settings: DK_XR=1 on. DK_XR_LOOKAHEAD=<frames> (default 2): how far ahead a head sample is
++// predicted, since a pair is shown a frame or two after its camera is built. XR_RUNTIME_JSON picks
++// the runtime for this process only (the OpenXR loader reads it). openxr_loader.dll is loaded from
++// beside the exe.
++
++#include "rex/graphics/d3d12/xr_output.h"
++
++#include <atomic>
++#include <cmath>
++#include <cstdarg>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <mutex>
++#include <vector>
++
++#define XR_USE_PLATFORM_WIN32
++#define XR_USE_GRAPHICS_API_D3D12
++#include <openxr/openxr.h>
++#include <openxr/openxr_platform.h>
++
++#include "xr_blit.h"
++
++namespace rex::graphics::d3d12 {
++
++namespace {
++
++constexpr int kSampleRing = 64;
++constexpr uint64_t kReportEvery = 300;
++
++struct Sample {
++  uint32_t id = 0;
++  XrView views[2] = {{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
++};
++
++struct Chain {
++  XrSwapchain handle = XR_NULL_HANDLE;
++  std::vector<XrSwapchainImageD3D12KHR> images;
++};
++
++#define DK_XR_FUNCS(X)                                                                         \
++  X(xrDestroyInstance) X(xrGetSystem) X(xrGetD3D12GraphicsRequirementsKHR) X(xrCreateSession)  \
++  X(xrDestroySession) X(xrBeginSession) X(xrEndSession) X(xrPollEvent)                         \
++  X(xrCreateReferenceSpace) X(xrEnumerateSwapchainFormats) X(xrCreateSwapchain)                \
++  X(xrDestroySwapchain) X(xrEnumerateSwapchainImages) X(xrAcquireSwapchainImage)               \
++  X(xrWaitSwapchainImage) X(xrReleaseSwapchainImage) X(xrWaitFrame) X(xrBeginFrame)            \
++  X(xrEndFrame) X(xrLocateViews) X(xrLocateSpace)
++
++struct State {
++  bool tried = false, failed = false, exiting = false;
++  std::atomic<bool> running{false};
++  PFN_xrGetInstanceProcAddr gipa = nullptr;
++#define DK_XR_DECLARE(f) PFN_##f f = nullptr;
++  DK_XR_FUNCS(DK_XR_DECLARE)
++#undef DK_XR_DECLARE
++  XrInstance instance = XR_NULL_HANDLE;
++  XrSystemId system = XR_NULL_SYSTEM_ID;
++  XrSession session = XR_NULL_HANDLE;
++  XrSpace local = XR_NULL_HANDLE, view = XR_NULL_HANDLE;
++  Chain chains[2];
++  uint32_t chain_w = 0, chain_h = 0;
++  int64_t format = 0;
++  xr::EyeBlit blit;
++  bool blit_ready = false;
++
++  // Shared with the game's frame thread (rex_xr_sample_head).
++  std::mutex mutex;
++  Sample ring[kSampleRing];
++  uint32_t next_id = 0;
++  XrTime predicted = 0;
++  XrDuration period = 0;
++  int lookahead = 2;
++
++  // From the game program, looked up once.
++  int (*pair_sample)(uint32_t pair, uint32_t* id) = nullptr;
++  int (*eye_fov)(float tangents[4]) = nullptr;
++
++  uint64_t frames = 0, not_rendered = 0, sample_hits = 0, sample_misses = 0, blit_errors = 0;
++  double wait_ms_sum = 0.0;
++};
++
++State& S() {
++  static State s;
++  return s;
++}
++
++int64_t RtvTwin(int64_t f) {  // the non-sRGB format with the same bytes
++  switch (f) {
++    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return DXGI_FORMAT_R8G8B8A8_UNORM;
++    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return DXGI_FORMAT_B8G8R8A8_UNORM;
++    default: return f;
++  }
++}
++
++bool IsTypeless(DXGI_FORMAT f) {
++  return f == DXGI_FORMAT_R8G8B8A8_TYPELESS || f == DXGI_FORMAT_B8G8R8A8_TYPELESS ||
++         f == DXGI_FORMAT_R10G10B10A2_TYPELESS;
++}
++
++bool IsSrgb(int64_t f) {
++  return f == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || f == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
++}
++
++XrFovf FovFromTangents(const float t[4]) {
++  return {-std::atan(t[0]), std::atan(t[1]), std::atan(t[2]), -std::atan(t[3])};
++}
++
++}  // namespace
++
++XrOutput& XrOutput::Get() {
++  static XrOutput o;
++  return o;
++}
++
++bool XrOutput::Wanted() {
++  static const bool on = [] {
++    const char* e = std::getenv("DK_XR");
++    return e && e[0] == '1';
++  }();
++  return on;
++}
++
++void XrOutput::Log(const char* fmt, ...) {
++  char line[512];
++  va_list args;
++  va_start(args, fmt);
++  std::vsnprintf(line, sizeof(line), fmt, args);
++  va_end(args);
++  if (log_) {
++    log_(line);
++  } else {
++    OutputDebugStringA(line);
++    OutputDebugStringA("\n");
++  }
++}
++
++namespace {
++
++bool Fail(XrOutput& o, State& s, const char* what, XrResult r) {
++  o.Log("[XR] OFF: %s (XrResult %d)", what, int(r));
++  s.failed = true;
++  return false;
++}
++
++bool Start(XrOutput& o, State& s, ID3D12Device* device, ID3D12CommandQueue* queue) {
++  if (const char* e = std::getenv("DK_XR_LOOKAHEAD")) s.lookahead = std::atoi(e);
++  HMODULE exe = GetModuleHandleW(nullptr);
++  s.pair_sample = reinterpret_cast<int (*)(uint32_t, uint32_t*)>(
++      reinterpret_cast<void*>(GetProcAddress(exe, "dk_xr_pair_sample")));
++  s.eye_fov = reinterpret_cast<int (*)(float*)>(
++      reinterpret_cast<void*>(GetProcAddress(exe, "dk_xr_eye_fov")));
++
++  wchar_t path[MAX_PATH];
++  DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
++  while (n > 0 && path[n - 1] != L'\\') --n;
++  path[n] = 0;
++  wcsncat_s(path, L"openxr_loader.dll", _TRUNCATE);
++  HMODULE loader = LoadLibraryW(path);
++  if (!loader) loader = LoadLibraryW(L"openxr_loader.dll");
++  if (!loader) return Fail(o, s, "openxr_loader.dll not found beside the exe", XR_SUCCESS);
++  s.gipa = reinterpret_cast<PFN_xrGetInstanceProcAddr>(
++      reinterpret_cast<void*>(GetProcAddress(loader, "xrGetInstanceProcAddr")));
++  PFN_xrCreateInstance create_instance = nullptr;
++  if (!s.gipa || XR_FAILED(s.gipa(XR_NULL_HANDLE, "xrCreateInstance",
++                                  reinterpret_cast<PFN_xrVoidFunction*>(&create_instance)))) {
++    return Fail(o, s, "the loader has no xrCreateInstance", XR_SUCCESS);
++  }
++
++  const char* exts[] = {XR_KHR_D3D12_ENABLE_EXTENSION_NAME};
++  XrInstanceCreateInfo ici = {XR_TYPE_INSTANCE_CREATE_INFO};
++  std::strcpy(ici.applicationInfo.applicationName, "ReXGlue DK_XR");
++  std::strcpy(ici.applicationInfo.engineName, "ReXGlue");
++  ici.applicationInfo.apiVersion = XR_API_VERSION_1_0;
++  ici.enabledExtensionCount = 1;
++  ici.enabledExtensionNames = exts;
++  XrResult r = create_instance(&ici, &s.instance);
++  if (XR_FAILED(r)) return Fail(o, s, "xrCreateInstance (no D3D12 OpenXR runtime?)", r);
++#define DK_XR_LOAD(f)                                                                       \
++  if (XR_FAILED(s.gipa(s.instance, #f, reinterpret_cast<PFN_xrVoidFunction*>(&s.f))))     \
++    return Fail(o, s, "missing " #f, XR_ERROR_FUNCTION_UNSUPPORTED);
++  DK_XR_FUNCS(DK_XR_LOAD)
++#undef DK_XR_LOAD
++
++  XrSystemGetInfo sgi = {XR_TYPE_SYSTEM_GET_INFO};
++  sgi.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
++  if (XR_FAILED(r = s.xrGetSystem(s.instance, &sgi, &s.system))) return Fail(o, s, "no headset", r);
++  XrGraphicsRequirementsD3D12KHR req = {XR_TYPE_GRAPHICS_REQUIREMENTS_D3D12_KHR};
++  if (XR_FAILED(r = s.xrGetD3D12GraphicsRequirementsKHR(s.instance, s.system, &req)))
++    return Fail(o, s, "graphics requirements", r);
++  const LUID luid = device->GetAdapterLuid();
++  if (luid.LowPart != req.adapterLuid.LowPart || luid.HighPart != req.adapterLuid.HighPart)
++    return Fail(o, s, "the headset is on a different graphics card than the game", XR_SUCCESS);
++
++  XrGraphicsBindingD3D12KHR binding = {XR_TYPE_GRAPHICS_BINDING_D3D12_KHR};
++  binding.device = device;
++  binding.queue = queue;
++  XrSessionCreateInfo sci = {XR_TYPE_SESSION_CREATE_INFO};
++  sci.next = &binding;
++  sci.systemId = s.system;
++  if (XR_FAILED(r = s.xrCreateSession(s.instance, &sci, &s.session)))
++    return Fail(o, s, "xrCreateSession", r);
++  XrReferenceSpaceCreateInfo rsi = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
++  rsi.poseInReferenceSpace.orientation.w = 1.0f;
++  rsi.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
++  if (XR_FAILED(r = s.xrCreateReferenceSpace(s.session, &rsi, &s.local)))
++    return Fail(o, s, "local space", r);
++  rsi.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
++  if (XR_FAILED(r = s.xrCreateReferenceSpace(s.session, &rsi, &s.view)))
++    return Fail(o, s, "view space", r);
++
++  uint32_t count = 0;
++  s.xrEnumerateSwapchainFormats(s.session, 0, &count, nullptr);
++  std::vector<int64_t> formats(count);
++  s.xrEnumerateSwapchainFormats(s.session, count, &count, formats.data());
++  const int64_t wanted[] = {DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
++                            DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
++                            DXGI_FORMAT_R10G10B10A2_UNORM};
++  for (int64_t w : wanted) {
++    for (int64_t f : formats) {
++      if (f == w && s.format == 0) s.format = f;
++    }
++  }
++  if (s.format == 0) return Fail(o, s, "the headset offers no 8-bit or 10-bit colour format", r);
++  o.Log("[XR] runtime up: %u formats offered, using DXGI %lld; game fov export %s, pair export %s",
++        count, (long long)s.format, s.eye_fov ? "yes" : "no", s.pair_sample ? "yes" : "no");
++  return true;
++}
++
++void PollEvents(XrOutput& o, State& s) {
++  XrEventDataBuffer ev = {XR_TYPE_EVENT_DATA_BUFFER};
++  while (s.xrPollEvent(s.instance, &ev) == XR_SUCCESS) {
++    if (ev.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
++      const auto& sc = *reinterpret_cast<XrEventDataSessionStateChanged*>(&ev);
++      o.Log("[XR] session state %d", int(sc.state));
++      if (sc.state == XR_SESSION_STATE_READY) {
++        XrSessionBeginInfo bi = {XR_TYPE_SESSION_BEGIN_INFO};
++        bi.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
++        s.running = XR_SUCCEEDED(s.xrBeginSession(s.session, &bi));
++      } else if (sc.state == XR_SESSION_STATE_STOPPING) {
++        s.xrEndSession(s.session);
++        s.running = false;
++      } else if (sc.state == XR_SESSION_STATE_EXITING ||
++                 sc.state == XR_SESSION_STATE_LOSS_PENDING) {
++        s.running = false;
++        s.exiting = true;
++      }
++    } else if (ev.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
++      s.running = false;
++      s.exiting = true;
++    }
++    ev = {XR_TYPE_EVENT_DATA_BUFFER};
++  }
++}
++
++bool MakeChains(XrOutput& o, State& s, ID3D12Device* device, uint32_t w, uint32_t h) {
++  for (Chain& c : s.chains) {
++    if (c.handle != XR_NULL_HANDLE) s.xrDestroySwapchain(c.handle);
++    c = Chain{};
++  }
++  for (Chain& c : s.chains) {
++    XrSwapchainCreateInfo ci = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
++    ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
++    ci.format = s.format;
++    ci.sampleCount = 1;
++    ci.width = w;
++    ci.height = h;
++    ci.faceCount = 1;
++    ci.arraySize = 1;
++    ci.mipCount = 1;
++    XrResult r = s.xrCreateSwapchain(s.session, &ci, &c.handle);
++    if (XR_FAILED(r)) return Fail(o, s, "xrCreateSwapchain", r);
++    uint32_t n = 0;
++    s.xrEnumerateSwapchainImages(c.handle, 0, &n, nullptr);
++    c.images.assign(n, {XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
++    s.xrEnumerateSwapchainImages(c.handle, n, &n,
++                                 reinterpret_cast<XrSwapchainImageBaseHeader*>(c.images.data()));
++  }
++  s.chain_w = w;
++  s.chain_h = h;
++  if (!s.blit_ready) {
++    // A typeless image takes a plain view, so the stored bytes are exactly the picture's (which is
++    // already gamma-encoded). A typed sRGB image needs an sRGB view: undo the gamma first.
++    const DXGI_FORMAT actual = s.chains[0].images[0].texture->GetDesc().Format;
++    const bool typeless = IsTypeless(actual);
++    const DXGI_FORMAT rtv = DXGI_FORMAT(typeless ? RtvTwin(s.format) : s.format);
++    const bool decode = !typeless && IsSrgb(s.format);
++    const char* err = "";
++    if (!s.blit.Init(device, rtv, decode, &err)) return Fail(o, s, err, XR_SUCCESS);
++    s.blit_ready = true;
++    o.Log("[XR] eye images %ux%u, image format %d (%s), drawn as %d, gamma undone: %s", w, h,
++          int(actual), typeless ? "typeless" : "typed", int(rtv), decode ? "yes" : "no");
++    if (!typeless && !IsSrgb(s.format))
++      o.Log("[XR] note: the headset treats this format as linear; the picture may look pale");
++  }
++  return true;
++}
++
++bool LocateViews(State& s, XrTime t, XrView out[2]) {
++  XrViewLocateInfo li = {XR_TYPE_VIEW_LOCATE_INFO};
++  li.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
++  li.displayTime = t;
++  li.space = s.local;
++  XrViewState vs = {XR_TYPE_VIEW_STATE};
++  uint32_t n = 0;
++  out[0] = out[1] = {XR_TYPE_VIEW};
++  return XR_SUCCEEDED(s.xrLocateViews(s.session, &li, &vs, 2, &n, out)) && n == 2 &&
++         (vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT);
++}
++
++}  // namespace
++
++void XrOutput::SubmitPair(ID3D12Device* device, ID3D12CommandQueue* queue, ID3D12Resource* left,
++                          ID3D12Resource* right, uint32_t width, uint32_t height,
++                          D3D12_RESOURCE_STATES state, uint32_t pair) {
++  State& s = S();
++  if (s.failed || s.exiting) return;
++  if (!s.tried) {
++    s.tried = true;
++    if (!Start(*this, s, device, queue)) return;
++  }
++  PollEvents(*this, s);
++  if (!s.running) return;
++  if ((s.chain_w != width || s.chain_h != height) && !MakeChains(*this, s, device, width, height))
++    return;
++
++  XrFrameState fs = {XR_TYPE_FRAME_STATE};
++  XrFrameWaitInfo wi = {XR_TYPE_FRAME_WAIT_INFO};
++  const ULONGLONG t0 = GetTickCount64();
++  if (XR_FAILED(s.xrWaitFrame(s.session, &wi, &fs))) return;
++  s.wait_ms_sum += double(GetTickCount64() - t0);
++  {
++    std::lock_guard<std::mutex> lock(s.mutex);
++    s.predicted = fs.predictedDisplayTime;
++    s.period = fs.predictedDisplayPeriod;
++  }
++  XrFrameBeginInfo bi = {XR_TYPE_FRAME_BEGIN_INFO};
++  if (XR_FAILED(s.xrBeginFrame(s.session, &bi))) return;
++
++  XrCompositionLayerProjectionView views[2] = {{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
++                                               {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
++  XrCompositionLayerProjection layer = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
++  const XrCompositionLayerBaseHeader* layers[] = {
++      reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer)};
++  bool drawn = false;
++
++  if (fs.shouldRender) {
++    // The eye poses the picture was drawn with: the game's sample for this pair, else now.
++    XrView eye[2];
++    bool have = false;
++    uint32_t id = 0;
++    if (pair != UINT32_MAX && s.pair_sample && s.pair_sample(pair, &id)) {
++      std::lock_guard<std::mutex> lock(s.mutex);
++      const Sample& smp = s.ring[id % kSampleRing];
++      if (smp.id == id && id != 0) {
++        eye[0] = smp.views[0];
++        eye[1] = smp.views[1];
++        have = true;
++      }
++    }
++    ++(have ? s.sample_hits : s.sample_misses);
++    if (!have) have = LocateViews(s, fs.predictedDisplayTime, eye);
++
++    float tangents[4];
++    const bool game_fov = s.eye_fov && s.eye_fov(tangents);
++    ID3D12Resource* src[2] = {left, right};
++    ID3D12Resource* dst[2];
++    uint32_t index[2];
++    bool acquired[2] = {false, false};
++    bool ok = have;
++    for (int e = 0; e < 2 && ok; ++e) {
++      XrSwapchainImageAcquireInfo ai = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
++      XrSwapchainImageWaitInfo swi = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
++      swi.timeout = XR_INFINITE_DURATION;
++      acquired[e] = XR_SUCCEEDED(s.xrAcquireSwapchainImage(s.chains[e].handle, &ai, &index[e]));
++      ok = acquired[e] && XR_SUCCEEDED(s.xrWaitSwapchainImage(s.chains[e].handle, &swi));
++      if (ok) dst[e] = s.chains[e].images[index[e]].texture;
++    }
++    const char* err = "";
++    if (ok && !s.blit.Draw(queue, src, state, dst, width, height, &err)) {
++      ++s.blit_errors;
++      if (s.blit_errors <= 3) Log("[XR] draw failed: %s", err);
++    }
++    for (int e = 0; e < 2; ++e) {
++      XrSwapchainImageReleaseInfo ri = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
++      if (acquired[e]) s.xrReleaseSwapchainImage(s.chains[e].handle, &ri);
++      views[e].pose = eye[e].pose;
++      views[e].fov = game_fov ? FovFromTangents(tangents) : eye[e].fov;
++      views[e].subImage.swapchain = s.chains[e].handle;
++      views[e].subImage.imageRect = {{0, 0}, {int32_t(width), int32_t(height)}};
++    }
++    drawn = ok;
++    layer.space = s.local;
++    layer.viewCount = 2;
++    layer.views = views;
++  } else {
++    ++s.not_rendered;
++  }
++
++  XrFrameEndInfo ei = {XR_TYPE_FRAME_END_INFO};
++  ei.displayTime = fs.predictedDisplayTime;
++  ei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
++  ei.layerCount = drawn ? 1 : 0;
++  ei.layers = layers;
++  const XrResult r = s.xrEndFrame(s.session, &ei);
++  if (XR_FAILED(r) && s.frames < 3) Log("[XR] xrEndFrame failed (XrResult %d)", int(r));
++
++  if (++s.frames == 1 || (s.frames % kReportEvery) == 0) {
++    Log("[XR] frames=%llu not_rendered=%llu sample_hits=%llu sample_misses=%llu "
++        "draw_errors=%llu wait_ms_mean=%.2f",
++        (unsigned long long)s.frames, (unsigned long long)s.not_rendered,
++        (unsigned long long)s.sample_hits, (unsigned long long)s.sample_misses,
++        (unsigned long long)s.blit_errors, s.wait_ms_sum / double(s.frames));
++  }
++}
++
++}  // namespace rex::graphics::d3d12
++
++extern "C" __declspec(dllexport) int rex_xr_sample_head(uint32_t* id_out, float orient_xyzw[4],
++                                                        float pos_xyz[3]) {
++  using rex::graphics::d3d12::Sample;
++  auto& s = rex::graphics::d3d12::S();
++  orient_xyzw[0] = orient_xyzw[1] = orient_xyzw[2] = 0.0f;
++  orient_xyzw[3] = 1.0f;
++  pos_xyz[0] = pos_xyz[1] = pos_xyz[2] = 0.0f;
++  *id_out = 0;
++  if (!s.running || s.predicted == 0) return 0;
++  XrTime t;
++  {
++    std::lock_guard<std::mutex> lock(s.mutex);
++    t = s.predicted + XrTime(s.lookahead) * s.period;
++  }
++  XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
++  if (XR_FAILED(s.xrLocateSpace(s.view, s.local, t, &head)) ||
++      !(head.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
++    return 0;
++  }
++  XrView eyes[2];
++  if (!rex::graphics::d3d12::LocateViews(s, t, eyes)) return 0;
++  const XrQuaternionf& q = head.pose.orientation;
++  orient_xyzw[0] = q.x;
++  orient_xyzw[1] = q.y;
++  orient_xyzw[2] = q.z;
++  orient_xyzw[3] = q.w;
++  if (head.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) {
++    pos_xyz[0] = head.pose.position.x;
++    pos_xyz[1] = head.pose.position.y;
++    pos_xyz[2] = head.pose.position.z;
++  }
++  std::lock_guard<std::mutex> lock(s.mutex);
++  uint32_t id = ++s.next_id;
++  if (id == 0) id = ++s.next_id;  // 0 means "no sample"
++  Sample& slot = s.ring[id % rex::graphics::d3d12::kSampleRing];
++  slot.id = id;
++  slot.views[0] = eyes[0];
++  slot.views[1] = eyes[1];
++  *id_out = id;
++  return 1;
++}
+diff --git b/tests/dk_xr/build_test.bat b/tests/dk_xr/build_test.bat
+new file mode 100644
+index 0000000..e7cd40f
+--- /dev/null
++++ b/tests/dk_xr/build_test.bat
+@@ -0,0 +1,13 @@
++@echo off
++setlocal
++set LLVM=C:\Users\Tefa\AppData\Local\Microsoft\WinGet\Packages\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\llvm-mingw-20260616-ucrt-x86_64\bin
++set SDK=%~dp0..\..
++set OUT=%~1
++if "%OUT%"=="" set OUT=%~dp0out
++if not exist "%OUT%" mkdir "%OUT%"
++call "D:\VSBuildTools\VC\Auxiliary\Build\vcvars64.bat" > nul 2>&1
++"%LLVM%\clang++.exe" --target=x86_64-pc-windows-msvc -fuse-ld=lld -std=c++20 -O1 -Wall ^
++  -I"%SDK%\include" -I"%SDK%\src\graphics\d3d12" -I"%SDK%\thirdparty\sdl3\src\video\khronos" ^
++  "%~dp0xr_host_test.cpp" "%SDK%\src\graphics\d3d12\xr_output.cpp" "%SDK%\src\graphics\d3d12\xr_blit.cpp" ^
++  -o "%OUT%\xr_host_test.exe" -ld3d12 -ldxgi
++echo build errorlevel: %errorlevel%
+diff --git b/tests/dk_xr/xr_host_test.cpp b/tests/dk_xr/xr_host_test.cpp
+new file mode 100644
+index 0000000..82623f7
+--- /dev/null
++++ b/tests/dk_xr/xr_host_test.cpp
+@@ -0,0 +1,150 @@
++// Patch 09 (DK_XR) test host: drives xr_output.cpp + xr_blit.cpp exactly as the SDK does, with no
++// game. Two flat-coloured eye textures (left red, right blue, 10:10:10:2 like the game's output)
++// are sent for N frames to whatever OpenXR runtime XR_RUNTIME_JSON names (the simulator on the dev
++// PC). The host also plays the game program's part: it exports dk_xr_eye_fov (Condemned 2's own
++// tangents) and dk_xr_pair_sample, sampling the head once per pair the way the game will.
++//
++// Passes (exit 0) when frames were submitted, every pair found its head sample, and nothing failed.
++// Usage: xr_host_test.exe [frames]
++
++#include <windows.h>
++#include <d3d12.h>
++#include <dxgi1_4.h>
++#include <wrl/client.h>
++
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <string>
++
++#include "rex/graphics/d3d12/xr_output.h"
++
++using Microsoft::WRL::ComPtr;
++using rex::graphics::d3d12::XrOutput;
++
++namespace {
++
++constexpr uint32_t kW = 1280, kH = 720;
++constexpr uint32_t kRingPairs = 64;
++uint32_t g_pair_ids[kRingPairs] = {};
++uint32_t g_pair_of[kRingPairs] = {};
++int g_off = 0, g_draw_failed = 0, g_samples_ok = 0;
++std::string g_last_report;
++
++void LogLine(const char* line) {
++  std::printf("%s\n", line);
++  if (std::strstr(line, "[XR] OFF")) ++g_off;
++  if (std::strstr(line, "draw failed")) ++g_draw_failed;
++  if (std::strstr(line, "frames=")) g_last_report = line;
++}
++
++ComPtr<ID3D12Resource> MakeEye(ID3D12Device* dev, ID3D12CommandQueue* q, float red, float green,
++                               float blue) {
++  D3D12_HEAP_PROPERTIES heap = {D3D12_HEAP_TYPE_DEFAULT};
++  D3D12_RESOURCE_DESC d = {};
++  d.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
++  d.Width = kW;
++  d.Height = kH;
++  d.DepthOrArraySize = 1;
++  d.MipLevels = 1;
++  d.Format = DXGI_FORMAT_R10G10B10A2_UNORM;
++  d.SampleDesc.Count = 1;
++  d.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
++  D3D12_CLEAR_VALUE cv = {d.Format, {red, green, blue, 1.0f}};
++  ComPtr<ID3D12Resource> tex;
++  if (FAILED(dev->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &d,
++                                          D3D12_RESOURCE_STATE_RENDER_TARGET, &cv,
++                                          IID_PPV_ARGS(&tex))))
++    return nullptr;
++  ComPtr<ID3D12DescriptorHeap> rtv_heap;
++  D3D12_DESCRIPTOR_HEAP_DESC hd = {D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1};
++  dev->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&rtv_heap));
++  dev->CreateRenderTargetView(tex.Get(), nullptr, rtv_heap->GetCPUDescriptorHandleForHeapStart());
++  ComPtr<ID3D12CommandAllocator> a;
++  ComPtr<ID3D12GraphicsCommandList> l;
++  dev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&a));
++  dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, a.Get(), nullptr, IID_PPV_ARGS(&l));
++  l->ClearRenderTargetView(rtv_heap->GetCPUDescriptorHandleForHeapStart(), cv.Color, 0, nullptr);
++  D3D12_RESOURCE_BARRIER b = {};
++  b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
++  b.Transition.pResource = tex.Get();
++  b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
++  b.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
++  b.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;  // where the SDK keeps eye textures
++  l->ResourceBarrier(1, &b);
++  l->Close();
++  ID3D12CommandList* lists[] = {l.Get()};
++  q->ExecuteCommandLists(1, lists);
++  ComPtr<ID3D12Fence> f;
++  dev->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&f));
++  q->Signal(f.Get(), 1);
++  HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, nullptr);
++  f->SetEventOnCompletion(1, ev);
++  WaitForSingleObject(ev, 5000);
++  CloseHandle(ev);
++  return tex;
++}
++
++}  // namespace
++
++// The game program's side (the real ones live in Condemned 2's vr_head_pose.cpp).
++extern "C" __declspec(dllexport) int dk_xr_eye_fov(float t[4]) {
++  t[0] = t[1] = 1.2448f;  // Condemned 2's player view, logged 2026-10-12
++  t[2] = t[3] = 0.7002f;
++  return 1;
++}
++
++extern "C" __declspec(dllexport) int dk_xr_pair_sample(uint32_t pair, uint32_t* id) {
++  const uint32_t slot = pair % kRingPairs;
++  if (g_pair_of[slot] != pair || g_pair_ids[slot] == 0) return 0;
++  *id = g_pair_ids[slot];
++  return 1;
++}
++
++int main(int argc, char** argv) {
++  const int frames = argc > 1 ? std::atoi(argv[1]) : 180;
++  SetEnvironmentVariableA("DK_XR", "1");
++  ComPtr<IDXGIFactory4> factory;
++  ComPtr<IDXGIAdapter1> adapter;
++  ComPtr<ID3D12Device> dev;
++  if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))) ||
++      FAILED(factory->EnumAdapters1(0, &adapter)) ||
++      FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&dev)))) {
++    std::printf("FAIL: no D3D12 device\n");
++    return 2;
++  }
++  D3D12_COMMAND_QUEUE_DESC qd = {D3D12_COMMAND_LIST_TYPE_DIRECT};
++  ComPtr<ID3D12CommandQueue> q;
++  dev->CreateCommandQueue(&qd, IID_PPV_ARGS(&q));
++  ComPtr<ID3D12Resource> left = MakeEye(dev.Get(), q.Get(), 1.0f, 0.0f, 0.0f);
++  ComPtr<ID3D12Resource> right = MakeEye(dev.Get(), q.Get(), 0.0f, 0.0f, 1.0f);
++  if (!left || !right) {
++    std::printf("FAIL: eye textures\n");
++    return 2;
++  }
++
++  XrOutput& xr = XrOutput::Get();
++  xr.SetLog(LogLine);
++  for (int i = 0; i < frames && !g_off; ++i) {
++    const uint32_t pair = uint32_t(i);
++    // As the game will: sample the head when the pair's camera is built (here, just before).
++    uint32_t id = 0;
++    float q4[4], p3[3];
++    if (rex_xr_sample_head(&id, q4, p3)) {
++      ++g_samples_ok;
++      g_pair_of[pair % kRingPairs] = pair;
++      g_pair_ids[pair % kRingPairs] = id;
++      if (g_samples_ok == 1)
++        std::printf("first head sample id=%u q=(%.3f %.3f %.3f %.3f) p=(%.3f %.3f %.3f)\n", id,
++                    q4[0], q4[1], q4[2], q4[3], p3[0], p3[1], p3[2]);
++    }
++    xr.SubmitPair(dev.Get(), q.Get(), left.Get(), right.Get(), kW, kH,
++                  D3D12_RESOURCE_STATE_COPY_SOURCE, pair);
++  }
++  std::printf("RESULT off=%d draw_failed=%d head_samples=%d last: %s\n", g_off, g_draw_failed,
++              g_samples_ok, g_last_report.c_str());
++  const bool pass = !g_off && !g_draw_failed && g_samples_ok > 0 &&
++                    g_last_report.find("draw_errors=0") != std::string::npos;
++  std::printf("%s\n", pass ? "PASS" : "FAIL");
++  return pass ? 0 : 1;
++}
