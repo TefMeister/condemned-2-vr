@@ -209,6 +209,11 @@ namespace c2vr {
 
 bool SyncOn() { return Get().on; }
 
+uint32_t CurrentPair() {
+  return static_cast<uint32_t>(g_seq.load(std::memory_order_relaxed) /
+                               (2u * static_cast<uint64_t>(Get().period)));
+}
+
 float EyeSignForView() {
   if (!t_frame_thread) g_views_off_thread.fetch_add(1, std::memory_order_relaxed);
   float s = EyeNow() == 0 ? -1.0f : 1.0f;  // left eye moves left (-right axis)
