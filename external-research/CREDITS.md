@@ -25,3 +25,7 @@ are not, or you are a rights holder who wants something corrected or removed, op
 
 - **ReXGlue** SDK developers (source tree and submodule list) — https://github.com/rexglue/rexglue-sdk
 - **SDL** developers (libsdl-org), OpenXR integration docs and loader shim — https://github.com/libsdl-org/SDL
+
+## Sources (2026-10-26)
+
+- **psxrestore** and the Condemned2Recomp contributors, releases 0.3.1 to 0.4.0 and their notes — https://github.com/psxrestore/Condemned2Recomp
