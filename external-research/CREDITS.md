@@ -29,3 +29,8 @@ are not, or you are a rights holder who wants something corrected or removed, op
 ## Sources (2026-10-26)
 
 - **psxrestore** and the Condemned2Recomp contributors, releases 0.3.1 to 0.4.0 and their notes — https://github.com/psxrestore/Condemned2Recomp
+
+## Sources (2026-11-07)
+
+- **psxrestore** and the Condemned2Recomp contributors, releases 0.5.0 to 0.6.0 and the SDK fork — https://github.com/psxrestore/Condemned2Recomp, https://github.com/psxrestore/rexglue-sdk
+- **ReXGlue** SDK developers and the v0.10.1 contributors (pruefsumme, Graine25, catuhana, mrcmunir) — https://github.com/rexglue/rexglue-sdk
