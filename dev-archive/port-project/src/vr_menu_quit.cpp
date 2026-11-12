@@ -126,6 +126,14 @@ REX_HOOK_RAW(sub_82324238) {
       REXLOG_INFO("[TEXT] {} -> \"{}\"", id, r != 0 ? std::string(reinterpret_cast<const char*>(base + r)).substr(0, 60) : std::string("(null)"));
     }
   }
+  // 2026-11-12 (b004): A on ANY main-menu line builds every page's texts, IDS_MULTIPLAYER_MENU among them, so b003
+  // closed the game on Single Player too [verified-live 2026-11-12, n=2]. The highlighted line is known from its hint:
+  // the last *_TOOLTIP text looked up. Quit only when that is the Quit (Multiplayer) line's.
+  static bool on_quit_line = false;
+  {
+    const size_t len = std::strlen(id);
+    if (len > 8 && std::strcmp(id + len - 8, "_TOOLTIP") == 0) on_quit_line = std::strcmp(id, "IDS_MULTIPLAYER_TOOLTIP") == 0;
+  }
   if (!on || id[0] != 'I' || std::strncmp(id, "IDS_MULTIPLAYER", 15) != 0) return;
   if (std::strcmp(id, "IDS_MULTIPLAYER") == 0) {
     static const uint32_t word = GuestText(base, "C2_MENU_WORD", "Quit");
@@ -135,6 +143,6 @@ REX_HOOK_RAW(sub_82324238) {
     if (hint != 0) ctx.r3.u64 = hint;
   } else if (std::strcmp(id, "IDS_MULTIPLAYER_MENU") == 0) {
     static bool sent = false;
-    if (!sent) { sent = true; REXLOG_INFO("[MENU] Quit chosen on the main menu: closing the game"); EnumWindows(CloseOurs, 0); }
+    if (!sent && on_quit_line) { sent = true; REXLOG_INFO("[MENU] Quit chosen on the main menu: closing the game"); EnumWindows(CloseOurs, 0); }
   }
 }

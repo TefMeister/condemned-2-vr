@@ -56,3 +56,43 @@ arm-and-weapon as one piece.
 3. The arm's node names (GetNode with `gstr`), or a chain record by name, to set up one chain per arm ourselves
    (the two slots, target object 0), kept on against the auto-release.
 4. Then the feed: each controller's grip, relative to the head, laid from the camera (as The Darkness's `ik.src=1`).
+
+## First runs, the same evening (simulator, pretend controllers; b004, installed)
+
+**The hands follow the controllers** `[verified-live 2026-11-12, n=3 positions, simulator]`. Pictures:
+`dev-archive/recon/2026-11-12-hands-first-run/` (left to right: off = the game's own pose, on, on with reach x1.6;
+and on after walking to a wall).
+
+- The game switches no chain on for the player by itself at rest (no key, no set-up in the log).
+- **The player, live:** `*(*(0x829343B4) + 604 + 4)` = player 0 (`Player`, 3976 bytes); `+216` = its `PlayerBody`
+  (vtable 0x82020D88; `PlayerBody+4` = the player); `+308` = the character client object, whose IK manager is at
+  `+2264` (manager+0 = that object; both slots free) `[verified-live]`. `sub_822E3A38(character)` = its model object.
+- **The IKChain category has exactly two records: `RightArm` and `LeftArm`** (nodes named like `R_Armu`, `L_Armu`,
+  `L_Arml`) `[verified-live]`. The models database object is `*(0x829643D4)`, the category at its `+324`; a category
+  holds its count at `+8` and its records (24 bytes each) at `+12`; database vtable (0x820915F0): slot 17 = record by
+  name, 18 = count, 19 = record by index, 13 = category name.
+- **What the mod does (`vr_hand_ik.cpp`, `C2_HANDS=1` / bridge `ik.on`):** at frame end, for each free slot of the
+  player's manager (slot 0 `LeftArm`, slot 1 `RightArm`): `sub_823966F8(chain, model, record)`, target object 0,
+  state (`+212`) 2 = held. The game's chain update `sub_82396B90` is skipped for our chains (it lets go of a chain
+  with no target object, and when the animation changes). In the root callback each solve gets the weight (`+208`:
+  1 with a valid controller, 0 without = the animation's arm) and the target (`+64`): camera position + the game
+  camera's rotation (before the head turn) applied to (grip - head), OpenXR to LithTech axes (z flipped), x 100
+  units per metre x `ik.scale`. `ik.rot=1` also writes the controller's rotation to `+76` (not looked at yet).
+- The weapon (a plank in the right hand) moves with the hand: it hangs on the hand bone.
+- Bridge: `hands` prints chains, the controller sample, the camera and both targets; `gmem` / `gcall` / `gstr` / `gbuf`.
+
+## The Quit line's fault in b003, fixed in b004
+
+A on ANY main-menu line builds every page's texts at once, `IDS_MULTIPLAYER_MENU` among them, so b003's hook closed
+the game on Single Player too `[verified-live 2026-11-12, n=2]` (the b003 check only ever pressed A on the Quit line).
+b004 remembers the last `*_TOOLTIP` text looked up (the highlighted line's hint) and closes only when that is
+`IDS_MULTIPLAYER_TOOLTIP`: A on Single Player loads the save `[verified-live 2026-11-12, n=1]`. Quit itself on b004:
+not pressed again yet.
+
+## Open
+
+1. In the headset: do the hands sit where the real controllers are (scale, a fixed offset from grip to palm)?
+2. The hand's rotation (`ik.rot`, plus a fixed turn from the controller's axes to the hand bone's).
+3. Cutscenes, ladders, finishing moves, two-handed weapons: where our chains must let go (weight 0).
+4. Does the game's own `IK ON` key ever want a slot we hold (it finds none free and silently does nothing)?
+5. Level change: the chains are set up again by themselves (player pointer); not exercised yet.

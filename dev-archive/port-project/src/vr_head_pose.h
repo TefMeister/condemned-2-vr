@@ -18,6 +18,16 @@ bool HeadForPair(uint32_t pair, Quat* q, Vec3* offset_m);
 
 float UnitsPerMetre();
 
+// The controllers (SDK patch 10, rex_xr_sample_hands), sampled with every head sample (2026-11-12, vr_hand_ik.cpp).
+// head_p is the head's position in the same space as the grips (metres, OpenXR axes).
+struct HandSample {
+  Vec3 head_p{0, 0, 0};
+  float grip[2][7] = {{0, 0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 1}};   // left, right: px py pz qx qy qz qw
+  uint32_t flags = 0;    // 0x02 left position valid, 0x20 right position valid
+  uint32_t serial = 0;   // counts samples; 0 = none yet
+};
+bool LastHands(HandSample* out);
+
 // C2_XR_FOV=1: the headset's own view, both eyes covered, as tangents left, right, up, down (all
 // positive), from SDK patch 09b. False when off, or before the headset has given a sample.
 bool HeadsetFov(float t[4]);

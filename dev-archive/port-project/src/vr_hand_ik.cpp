@@ -38,11 +38,19 @@ extern "C" {
 #include <mutex>
 #include <string>
 
+#include "vr_head_math.h"
+#include "vr_head_pose.h"
+
 DECLARE_REX_FUNC(sub_82396D30);   // the "IK ..." model key: r3 = manager, r4 = model, r5 = tracker byte, r6 = the words
 DECLARE_REX_FUNC(sub_823966F8);   // chain set-up: r3 = chain, r4 = model, r5 = database record
 DECLARE_REX_FUNC(sub_82396130);   // root node callback: r3 = node control data, r4 = chain
 
+DECLARE_REX_FUNC(sub_82396B90);   // chain update (blend in / hold / auto-release): r3 = chain
+DECLARE_REX_FUNC(sub_822E3A38);   // character client object -> its model object
+DECLARE_REX_FUNC(sub_826A5F78);   // (models database, name) -> an IKChain record
+
 void C2HandsOnFlip(PPCContext& ctx, uint8_t* base);
+void C2HandsNoteCamera(float px, float py, float pz, float qx, float qy, float qz, float qw);
 
 namespace {
 
@@ -51,6 +59,12 @@ constexpr uint32_t kChModel = 12u, kChRecord = 16u, kChTargetObj = 56u, kChTarge
 constexpr uint32_t kChTargetPos = 64u, kChTargetRot = 76u;
 constexpr uint32_t kChNodeRoot = 92u, kChNodeJoint = 96u, kChNodeTarget = 100u;
 constexpr uint32_t kChLenUpper = 104u, kChLenLower = 108u, kChJointDist = 112u, kChJointSign = 116u, kChWeight = 208u;
+constexpr uint32_t kChState = 212u, kStateHeld = 2u;      // 1 blending in, 2 held, 3 blending out
+constexpr uint32_t kPlayerTable = 0x829343B4u, kPlayerTableOff = 604u + 4u;   // *(table)+604: count byte, then players
+constexpr uint32_t kPlayerCharacter = 308u, kCharacterIkManager = 2264u, kManagerChains = 8u, kChainBytes = 216u;
+constexpr uint32_t kModelsDb = 0x829643D4u;
+constexpr uint32_t kPosValid[2] = {0x02u, 0x20u};         // left, right (SDK patch 10)
+const char* const kChainName[2] = {"LeftArm", "RightArm"};   // the two IKChain records [verified-live 2026-11-12]
 constexpr int kSeenMax = 16;
 constexpr uint32_t kScratchBytes = 4096u, kStringRoom = 256u;
 
@@ -82,6 +96,16 @@ std::atomic<int> g_lines{0};
 int32_t g_force = 0;
 float g_target[3] = {0, 0, 0};
 int32_t g_only = 0;                 // 0 = every chain, else only this chain address
+
+// the hands (C2_HANDS=1 or ik.on=1): one chain per arm, ours, fed the controllers
+int32_t g_on = 0;
+int32_t g_rot = 0;                  // 1 = the controller's rotation goes to the chain too
+float g_scale = 1.0f;               // on top of the world units per metre
+uint32_t g_ours[2] = {0, 0};        // left, right chain addresses (0 = not set up)
+uint32_t g_setups = 0, g_fed[2] = {0, 0}, g_unfed[2] = {0, 0};
+struct Cam { float p[3] = {}; c2vr::Quat q{0, 0, 0, 1}; uint32_t serial = 0; };
+std::mutex g_cam_mu;
+Cam g_cam;
 
 // the game's thread at frame end, for gcall
 thread_local PPCContext* t_ctx = nullptr;
@@ -171,6 +195,8 @@ void CmdIk(int, const char**, bridge_reply* r, void*) {
   }
 }
 
+void CmdHands(int, const char**, bridge_reply* r, void*);
+
 void StartBridge() {
   static bool tried = false;
   if (tried) return;
@@ -183,6 +209,10 @@ void StartBridge() {
   bridge_var("ik.ty", BRIDGE_F32, &g_target[1], 1, "forced IK target, world y");
   bridge_var("ik.tz", BRIDGE_F32, &g_target[2], 1, "forced IK target, world z");
   bridge_var("ik.only", BRIDGE_I32, &g_only, 1, "0 = force every chain, else only the chain at this address");
+  bridge_var("ik.on", BRIDGE_I32, &g_on, 1, "1 = the player's two arm chains are ours and follow the controllers (C2_HANDS=1)");
+  bridge_var("ik.rot", BRIDGE_I32, &g_rot, 1, "1 = the controller's rotation is given to the chain as well");
+  bridge_var("ik.scale", BRIDGE_F32, &g_scale, 1, "hand reach multiplier on top of the world units per metre");
+  bridge_cmd("hands", CmdHands, nullptr, 0, "the hands: chains, controller sample, camera, targets");
   bridge_cmd("gmem", CmdGmem, nullptr, BRIDGE_CMD_ON_FRAME, "guest memory as words and floats: gmem <guest addr hex> [bytes]");
   bridge_cmd("gcall", CmdGcall, nullptr, BRIDGE_CMD_ON_FRAME, "call a game function at frame end: gcall <fn hex> [r3..r8 hex]");
   bridge_cmd("gstr", CmdGstr, nullptr, BRIDGE_CMD_ON_FRAME, "put a text into guest memory, answers its address: gstr <text>");
@@ -197,9 +227,99 @@ std::string GuestWord(uint8_t* base, uint32_t p) {
   return std::string(s, strnlen(s, 48));
 }
 
+using GuestFn = void (*)(PPCContext&, uint8_t*);
+uint32_t Call(GuestFn fn, PPCContext& ctx, uint8_t* base, uint32_t a3 = 0, uint32_t a4 = 0, uint32_t a5 = 0) {
+  const PPCContext saved = ctx;
+  ctx.r3.u64 = a3; ctx.r4.u64 = a4; ctx.r5.u64 = a5;
+  ctx.r1.u64 = saved.r1.u64 - 1024u;
+  fn(ctx, base);
+  const uint32_t r = ctx.r3.u32;
+  ctx = saved;
+  return r;
+}
+
+int OursIndex(uint32_t chain) { return chain != 0 && chain == g_ours[0] ? 0 : (chain != 0 && chain == g_ours[1] ? 1 : -1); }
+
+// Frame end, the game's thread: the player's two chain slots are set up as ours when free.
+void EnsureChains(PPCContext& ctx, uint8_t* base) {
+  const uint32_t table = REX_LOAD_U32(kPlayerTable);
+  const uint32_t player = table != 0 ? REX_LOAD_U32(table + kPlayerTableOff) : 0u;
+  const uint32_t character = player != 0 ? REX_LOAD_U32(player + kPlayerCharacter) : 0u;
+  if (character == 0) { g_ours[0] = g_ours[1] = 0; return; }
+  const uint32_t manager = character + kCharacterIkManager;
+  if (REX_LOAD_U32(manager) != character) { g_ours[0] = g_ours[1] = 0; return; }   // not built yet
+  for (int hand = 0; hand < 2; ++hand) {
+    const uint32_t chain = manager + kManagerChains + kChainBytes * static_cast<uint32_t>(hand);
+    const uint32_t model_now = REX_LOAD_U32(chain + kChModel);
+    if (g_ours[hand] == chain && model_now != 0) continue;
+    g_ours[hand] = 0;
+    if (model_now != 0) continue;   // the game is using this slot itself
+    const uint32_t model = Call(sub_822E3A38, ctx, base, character);
+    const uint32_t db = REX_LOAD_U32(kModelsDb);
+    if (model == 0 || db == 0 || Scratch() == 0) return;
+    const uint32_t name = Scratch() + kScratchBytes - kStringRoom;
+    std::strcpy(reinterpret_cast<char*>(base + name), kChainName[hand]);
+    const uint32_t record = Call(sub_826A5F78, ctx, base, db, name);
+    if (record == 0) { if (g_lines.fetch_add(1) < 400) Say(std::string("no IKChain record ") + kChainName[hand]); return; }
+    Call(sub_823966F8, ctx, base, chain, model, record);
+    REX_STORE_U32(chain + kChTargetObj, 0u);
+    REX_STORE_U32(chain + kChState, kStateHeld);
+    StoreF(base, chain + kChWeight, 0.0f);
+    g_ours[hand] = chain;
+    ++g_setups;
+    char line[160];
+    std::snprintf(line, sizeof(line), "ours: %s chain %08X player %08X character %08X model %08X", kChainName[hand], chain, player, character, model);
+    Say(line);
+  }
+}
+
+// The controller's grip as a world point: from the camera, along the game camera's own axes (before the head turn),
+// the grip's offset from the head (metres, OpenXR axes) times the world units per metre.
+bool HandTarget(int hand, float pos[3], c2vr::Quat* rot) {
+  c2vr::HandSample h;
+  if (!c2vr::LastHands(&h) || (h.flags & kPosValid[hand]) == 0) return false;
+  Cam cam;
+  { std::lock_guard<std::mutex> lk(g_cam_mu); cam = g_cam; }
+  if (cam.serial == 0) return false;
+  const float* g = h.grip[hand];
+  const c2vr::Vec3 rel = c2vr::XrToLithVec({g[0] - h.head_p.x, g[1] - h.head_p.y, g[2] - h.head_p.z});
+  const c2vr::Vec3 d = c2vr::Rotate(cam.q, rel);
+  const float u = c2vr::UnitsPerMetre() * g_scale;
+  pos[0] = cam.p[0] + d.x * u; pos[1] = cam.p[1] + d.y * u; pos[2] = cam.p[2] + d.z * u;
+  *rot = c2vr::CameraWithHead(cam.q, {g[3], g[4], g[5], g[6]});
+  return true;
+}
+
+void CmdHands(int, const char**, bridge_reply* r, void*) {
+  c2vr::HandSample h;
+  const bool have = c2vr::LastHands(&h);
+  bridge_reply_line(r, "on=%d ours L=%08X R=%08X setups=%u fed L=%u R=%u unfed L=%u R=%u", g_on, g_ours[0], g_ours[1], g_setups, g_fed[0], g_fed[1],
+                    g_unfed[0], g_unfed[1]);
+  bridge_reply_line(r, "controllers: sample %s serial %u flags %02X head %.2f %.2f %.2f L %.2f %.2f %.2f R %.2f %.2f %.2f", have ? "yes" : "none", h.serial,
+                    h.flags, h.head_p.x, h.head_p.y, h.head_p.z, h.grip[0][0], h.grip[0][1], h.grip[0][2], h.grip[1][0], h.grip[1][1], h.grip[1][2]);
+  Cam cam;
+  { std::lock_guard<std::mutex> lk(g_cam_mu); cam = g_cam; }
+  bridge_reply_line(r, "camera: serial %u pos %.1f %.1f %.1f quat %.3f %.3f %.3f %.3f", cam.serial, cam.p[0], cam.p[1], cam.p[2], cam.q.x, cam.q.y, cam.q.z, cam.q.w);
+  for (int hand = 0; hand < 2; ++hand) {
+    float p[3]; c2vr::Quat q;
+    if (HandTarget(hand, p, &q)) bridge_reply_line(r, "%s target %.1f %.1f %.1f", kChainName[hand], p[0], p[1], p[2]);
+  }
+}
+
 }  // namespace
 
+void C2HandsNoteCamera(float px, float py, float pz, float qx, float qy, float qz, float qw) {
+  std::lock_guard<std::mutex> lk(g_cam_mu);
+  g_cam.p[0] = px; g_cam.p[1] = py; g_cam.p[2] = pz;
+  g_cam.q = {qx, qy, qz, qw};
+  ++g_cam.serial;
+}
+
 void C2HandsOnFlip(PPCContext& ctx, uint8_t* base) {
+  static const bool env_on = EnvOn("C2_HANDS", false);
+  static bool first = true;
+  if (first) { first = false; if (env_on) g_on = 1; }
+  if (g_on != 0) EnsureChains(ctx, base);
   StartBridge();
   if (!bridge_running()) return;
   t_ctx = &ctx;
@@ -237,10 +357,25 @@ REX_HOOK_RAW(sub_823966F8) {
 REX_HOOK_RAW(sub_82396130) {
   const uint32_t chain = ctx.r4.u32;
   const uint32_t obj = REX_LOAD_U32(chain + kChTargetObj);
+  const int mine = OursIndex(chain);
   const bool force = g_force != 0 && (g_only == 0 || static_cast<uint32_t>(g_only) == chain);
   if (force) {
     REX_STORE_U32(chain + kChTargetObj, 0u);   // the callback then solves towards +64 as it stands
     for (uint32_t i = 0; i < 3u; ++i) StoreF(base, chain + kChTargetPos + 4u * i, g_target[i]);
+    if (mine >= 0) StoreF(base, chain + kChWeight, 1.0f);
+  } else if (mine >= 0) {
+    float p[3];
+    c2vr::Quat q;
+    const bool fed = g_on != 0 && HandTarget(mine, p, &q);
+    StoreF(base, chain + kChWeight, fed ? 1.0f : 0.0f);   // no controller: the arm is the animation's
+    ++(fed ? g_fed : g_unfed)[mine];
+    if (fed) {
+      for (uint32_t i = 0; i < 3u; ++i) StoreF(base, chain + kChTargetPos + 4u * i, p[i]);
+      if (g_rot != 0) {
+        const float qq[4] = {q.x, q.y, q.z, q.w};
+        for (uint32_t i = 0; i < 4u; ++i) StoreF(base, chain + kChTargetRot + 4u * i, qq[i]);
+      }
+    }
   }
   __imp__sub_82396130(ctx, base);
   if (force) REX_STORE_U32(chain + kChTargetObj, obj);
@@ -263,4 +398,12 @@ REX_HOOK_RAW(sub_82396130) {
     ++s.solves;
     for (uint32_t i = 0; i < 3u; ++i) s.pos[i] = LoadF(base, chain + kChTargetPos + 4u * i);
   }
+}
+
+// A chain of ours is never blended out or let go by the game's own update (it lets go of a chain with no target
+// object, and when the animation that switched it on changes): held, the weight is set per solve above.
+REX_HOOK_RAW(sub_82396B90) {
+  const uint32_t chain = ctx.r3.u32;
+  if (OursIndex(chain) >= 0) { REX_STORE_U32(chain + kChState, kStateHeld); return; }
+  __imp__sub_82396B90(ctx, base);
 }

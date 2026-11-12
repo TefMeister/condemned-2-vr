@@ -54,6 +54,7 @@ DECLARE_REX_FUNC(sub_8212BAB0);
 DECLARE_REX_FUNC(sub_82122EA8);
 
 void C2HandsOnFlip(PPCContext& ctx, uint8_t* base);   // vr_hand_ik.cpp
+void C2HandsNoteCamera(float px, float py, float pz, float qx, float qy, float qz, float qw);
 
 namespace {
 
@@ -268,6 +269,7 @@ REX_HOOK_RAW(sub_8212BAB0) {
       StoreF(base, xf + 20u, qz);
       StoreF(base, xf + 24u, qw);
       turned = true;
+      { const float gn = n > 0.0f ? n : 1.0f; C2HandsNoteCamera(px, py, pz, saved[3] / gn, saved[4] / gn, saved[5] / gn, saved[6] / gn); }   // vr_hand_ik.cpp
     }
     // right = q * (1,0,0)
     const float rx = 1.0f - 2.0f * (qy * qy + qz * qz);

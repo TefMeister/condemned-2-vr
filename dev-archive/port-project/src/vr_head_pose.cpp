@@ -19,6 +19,7 @@
 #include "generated/default/condemned2recomp_pch.h"
 
 #include <atomic>
+#include <mutex>
 #include <cstdlib>
 #include <cstring>
 
@@ -74,6 +75,19 @@ SampleFn Sampler() {
   return fn;
 }
 
+using HandsFn = int (*)(uint32_t*, float*, float*, uint32_t*);
+HandsFn HandSampler() {
+  static const HandsFn fn = [] {
+    HMODULE gpu = GetModuleHandleW(L"rexgpu-xenos.dll");
+    return gpu ? reinterpret_cast<HandsFn>(
+                     reinterpret_cast<void*>(GetProcAddress(gpu, "rex_xr_sample_hands")))
+               : nullptr;
+  }();
+  return fn;
+}
+std::mutex g_hands_mu;
+c2vr::HandSample g_hands;
+
 struct PairHead {
   std::atomic<uint32_t> pair{UINT32_MAX};
   std::atomic<uint32_t> id{0};
@@ -101,6 +115,17 @@ bool HeadForPair(uint32_t pair, Quat* q, Vec3* offset_m) {
     const bool ok = fn && fn(&id, o, p);
     ++(ok ? g_samples : g_no_sample);
     slot.q = {o[0], o[1], o[2], o[3]};
+    if (ok) {
+      if (const HandsFn hf = HandSampler()) {   // the controllers, at the same moment as the head
+        c2vr::HandSample h;
+        uint32_t hid = 0;
+        hf(&hid, h.grip[0], h.grip[1], &h.flags);
+        h.head_p = {p[0], p[1], p[2]};
+        std::lock_guard<std::mutex> lock(g_hands_mu);
+        h.serial = g_hands.serial + 1;
+        g_hands = h;
+      }
+    }
     if (ok && !g_have_origin) {
       g_have_origin = true;
       g_origin = {p[0], p[1], p[2]};
@@ -118,6 +143,12 @@ bool HeadForPair(uint32_t pair, Quat* q, Vec3* offset_m) {
 }
 
 float UnitsPerMetre() { return Get().units_per_m; }
+
+bool LastHands(HandSample* out) {
+  std::lock_guard<std::mutex> lock(g_hands_mu);
+  *out = g_hands;
+  return g_hands.serial != 0;
+}
 
 float HalfEyeUnits(float fallback) {
   using DistFn = int (*)(float*);
