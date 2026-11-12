@@ -17,6 +17,7 @@ set(CONDEMNED2RECOMP_SOURCES
     src/vr_screenfx_music.cpp
     src/vr_eye_sync.cpp
     src/vr_head_pose.cpp
+    src/vr_xr_pad.cpp
 )
 
 if(WIN32)
