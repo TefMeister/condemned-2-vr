@@ -53,6 +53,8 @@
 DECLARE_REX_FUNC(sub_8212BAB0);
 DECLARE_REX_FUNC(sub_82122EA8);
 
+void C2HandsOnFlip(PPCContext& ctx, uint8_t* base);   // vr_hand_ik.cpp
+
 namespace {
 
 constexpr uint32_t kRenderState = 0x82925950;
@@ -129,6 +131,7 @@ REX_HOOK_RAW(sub_82122EA8) {
   c2vr::OnFlipBegin();
   __imp__sub_82122EA8(ctx, base);
   c2vr::OnFlipEnd(ctx.r3.u32 != 0);
+  C2HandsOnFlip(ctx, base);   // vr_hand_ik.cpp: the bridge's frame-end commands (2026-11-12)
   if (ctx.r3.u32 == 0) return;  // returned 0: not in a state to present, nothing shown
 
   static bool thread_logged = false;

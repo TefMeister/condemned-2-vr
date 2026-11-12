@@ -3,7 +3,7 @@
 # SDK boilerplate lives in generated/rexglue.cmake.
 
 cmake_minimum_required(VERSION 3.25)
-project(condemned2recomp LANGUAGES CXX)
+project(condemned2recomp LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,8 @@ set(CONDEMNED2RECOMP_SOURCES
     src/vr_head_pose.cpp
     src/vr_xr_pad.cpp
     src/vr_menu_quit.cpp
+    src/vr_hand_ik.cpp
+    src/bridge/bridge.c
 )
 
 if(WIN32)
