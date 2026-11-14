@@ -31,11 +31,18 @@ using the project's own baseline produces a binary that runs correctly on a 2012
 **Intel Core i7-3770S** (Ivy Bridge). Details and measurements are in
 [`patches/UPSTREAM-REPORT.md`](patches/UPSTREAM-REPORT.md).
 
-**VR work is under way (2026-10-12).** The renderer is **D3D12**, and because the whole program is
-rebuilt from readable source, stereo rendering is added at the source level rather than injected
-from outside. We found where the game sets its camera; splitting it gives two viewpoints, and the
-game now makes clean left/right stereo pairs on the monitor, both eyes at the same moment, with the
-blur and screen effects switched off for VR. The headset comes next.
+**VR work is under way (updated 2026-11-14).** The renderer is **D3D12**, and because the whole program
+is rebuilt from readable source, stereo rendering is added at the source level rather than injected
+from outside. We found where the game sets its camera and split it into two viewpoints, with the blur
+and screen effects switched off for VR.
+
+- **In the headset (2026-10-15 / 10-26):** the game draws to the headset with head tracking and the
+  headset's own eye spread; the first real headset run played like a VR game held with a gamepad.
+- **Motion controllers (2026-11-12, builds 2 to 4):** the Quest controllers work as the gamepad (menus,
+  walking, flashlight), the main menu has a Quit line where Multiplayer was, and the hands follow the
+  controllers through the game's own arm movement. These were checked on a simulated headset and have
+  not been worn yet.
+- **Next:** real swings for the melee weapons.
 
 ## What this is not
 
