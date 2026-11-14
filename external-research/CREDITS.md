@@ -34,3 +34,11 @@ are not, or you are a rights holder who wants something corrected or removed, op
 
 - **psxrestore** and the Condemned2Recomp contributors, releases 0.5.0 to 0.6.0 and the SDK fork — https://github.com/psxrestore/Condemned2Recomp, https://github.com/psxrestore/rexglue-sdk
 - **ReXGlue** SDK developers and the v0.10.1 contributors (pruefsumme, Graine25, catuhana, mrcmunir) — https://github.com/rexglue/rexglue-sdk
+
+## Sources (2026-11-14)
+
+- **psxrestore** and the Condemned2Recomp contributors: settings code and history, commits since 0.6.0, issues #51, #62, #63, #73 — https://github.com/psxrestore/Condemned2Recomp
+- **GuidoBisocoli**, Condemned2Recomp issue #63 (where the saves went after an update) — https://github.com/psxrestore/Condemned2Recomp/issues/63
+- **ReXGlue** SDK developers, runtime and virtual file system source — https://github.com/rexglue/rexglue-sdk
+- **TheFreeMike**, F.E.A.R. VR Mod (README, controls guide, history, release notes) — https://github.com/thefreemike31/fear-vr
+- **vr.org**, F.E.A.R. VR mod article (2026-11-10) — https://vr.org/articles/fear-vr-mod-thefreemike-free-pc-vr-slow-motion-wrist-2026
